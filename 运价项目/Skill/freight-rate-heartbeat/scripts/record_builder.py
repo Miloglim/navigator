@@ -20,7 +20,7 @@ import paths as P
 WORK = P.WORK                                    # 运行态 .work 目录（包外，见 paths.py）
 from validity_parser import parse as vparse, derive as vderive
 
-# 契约值权威真源已迁到运价台账库（GET /api/master）；本文件不再持有钉钉 fieldId 映射。
+# 契约值权威真源在运价台账库（GET /api/master）；本文件只做模板与推断，不持有字段映射。
 # record_builder 只负责从消息文本抽字段、产出【中文字段键】候选记录，归一/校验交给台账 /api/validate。
 GROUPS = {"groups": P.chat_groups()}
 GMAP = {g["slug"]: g for g in GROUPS["groups"]}
@@ -56,7 +56,7 @@ def compose_text(msg):
 
 
 def base_cells(table, msg, fields, conf):
-    """产出台账契约要求的【中文字段键】候选记录（不再映钉钉 fieldId）。"""
+    """产出台账契约要求的【中文字段键】候选记录。"""
     rec = {}
     g = GMAP[msg["_slug"]]
     for k, v in fields.items():

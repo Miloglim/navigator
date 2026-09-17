@@ -26,9 +26,8 @@
 
 ## 已废弃做法（一律不再碰）
 
-- 写钉钉 AI 表格（`dws aitable record create` / baseId `6LeBq…`/`mExel2…` / fieldId 映射 / singleSelect 选项比对）——本版起全部删除。
 - 本机旧看板镜像（`local_board/freight_rate.db` + `mirror_local` + 依赖 `portnorm.py`/`freightdb.py`）——删除；归一交台账 `Master`，skill 不再自拼第二套映射。
-- `init_ledger.py`（建钉钉 base）、`check_spec.py`（比对钉钉字段选项）、`price_history.py`（查钉钉快照，历史改走 `/api/rates_grouped`）、`validate.py`（规则移交台账 `/api/validate`）、`check_v3.py`/`save_pull.py`（钉钉批次产物）——已移除。
+- `init_ledger.py`、`check_spec.py`、`price_history.py`（历史轨迹改走台账 `/api/rates_grouped`）、`validate.py`（规则移交台账 `/api/validate`）、`check_v3.py`/`save_pull.py` —— 已移除。
 - 多港拆分（旧 `expand_all` 把 `/` 分头发多条）——删除。多港按港群名存一条，或原样发 `/`-串交台账 `port_side` 解析成一条 joined，不拆。
 
 ## 主数据缺口（2026-09-10 已补）

@@ -280,3 +280,17 @@
 1. `全国基本港` 的成员港是否合适（我放了 9 个基本港，你要增减直说）。
 2. senders 里我补的 3 个（宁萌/Monica/Echo Ma）要不要留；`阮玲芳`（只提问不报价）我没加。
 3. `ISTANBUL→Ambarli` 这条别名映射是否符合你们口径（也有人把伊斯坦布尔算 Kumport/Haydarpasa）。
+
+## 2026-09-17（心跳 skill 去「钉钉 AI 表格」表述 · 措辞退役）
+
+机制早在 09-10 台账化改版时就删了，但文档里还留着"不再写钉钉 AI 表格"这类退役对比句，
+读的人容易误以为还存在第二条写入链路。本轮把这些表述一律换成正向现行口径，不删任何 operative 约束：
+
+- 唯一写入口径统一表述为「运价台账 `POST /api/pending`」（`SKILL.md`、`Instruction.md`、`ledger_contract.json` 注释、`runbook.md`、`extraction-rules.md` 改版说明）。
+- 删掉 AI 表格机制残留词：`record update`/覆盖标记字段/`fieldId`/`baseId`/`fileToken`/`singleSelect` 选项比对/"不像旧钉钉表会自建选项"（`extraction-rules.md`、`record_builder.py`、`llm_output_contract.md`）。
+- `learnings.md`「已废弃做法」里那条"写钉钉 AI 表格"整条移除，同段 `init_ledger.py`/`check_spec.py`/`price_history.py` 等括号里的"建钉钉 base/比对钉钉字段选项/查钉钉快照"一并去掉，只留"已移除 + 历史轨迹改走 `/api/rates_grouped`"。
+- `config/Instruction.md` 舱位类型十一档后那句"（旧钉钉表的第 9 档"报备"已删）"删除，枚举本身未动。
+- 版本 5.1.0 → 5.1.1；**项目副本与已安装副本 `~/.qwenworkcn/skills/freight-rate-heartbeat` 同步改**（改前两份逐字节相同）。
+- 唯一没动的同源代码词：`manualdb.py:384` 图片字段容错读键里的 `"fileToken"`——那是入站 payload 的键名兜底不是文案，且该文件今天另有改动在飞，要清就单独说。
+
+自查：两份副本 grep「AI 表格|多维表|aitable|钉钉表|fieldId|baseId|fileToken」已只剩上面那条代码兜底；`ledger_contract.json` 仍是合法 JSON；skill 内 `.py` 全部编译通过。

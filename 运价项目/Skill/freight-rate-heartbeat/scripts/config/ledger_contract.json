@@ -1,5 +1,5 @@
 {
- "_comment": "运价心跳契约单一事实源。注意：本 skill 不再写钉钉 AI 表格、也不再镜像本机旧看板，唯一写入口是运价台账 manual_server 的 POST /api/pending。字段中文名/枚举合法值/港口船司航线归一的权威真源都在台账库里（GET /api/master?full=1），本文件只留 skill 自检要用的少量常量、台账连接配置、以及运行态目录。运行态（watermark.json、.work 暂存、ocr_cache 识图缓存）落在包外的 runtime_dir，不进 skill 包。",
+ "_comment": "运价心跳契约单一事实源。唯一写入口是运价台账 manual_server 的 POST /api/pending。字段中文名/枚举合法值/港口船司航线归一的权威真源都在台账库里（GET /api/master?full=1），本文件只留 skill 自检要用的少量常量、台账连接配置、以及运行态目录。运行态（watermark.json、.work 暂存、ocr_cache 识图缓存）落在包外的 runtime_dir，不进 skill 包。",
  "portability": "换机器部署只改一处：project_root 指向项目根（含 Database/ 与 Skill/ 的那层）。token_file / images_dir / runtime_dir 都写成相对 project_root 的片段（也可写绝对路径）。优先级：环境变量 FRT_PROJECT_ROOT > 此处 project_root > 由源副本位置自动推断（源副本在 <root>/Skill/freight-rate-heartbeat 时能自动找到 <root>）。从安装副本(~/.qwenworkcn/skills)运行时靠 project_root 或 FRT_PROJECT_ROOT。",
  "version": "2026-09-10-db-realign",
  "target": {

@@ -3,7 +3,7 @@
 每条待判定消息一个文件：`.work/llm_out_<MMDD>/<safe(msg_id)>.json`
 `safe(msg_id)` = 非 `[A-Za-z0-9_.-]` 字符替换为 `_`、截断 60。
 
-> 2026-09-10 台账化改版：记录键 = **运价台账契约的中文列名**（见 `Database/docs/agent-input-contract.md`），不再是钉钉 fieldId。
+> 2026-09-10 台账化改版：记录键 = **运价台账契约的中文列名**（见 `Database/docs/agent-input-contract.md`）。
 > 记录只产出"新行"（insert）——**没有 status_update / 覆盖回写**了；售罄/调价由你产一条新记录，旧行交台账折叠视图现算当前。
 
 ```json
@@ -53,4 +53,4 @@
 
 新图识完后写 `.work/ocr_cache/<mediaId去掉@>.json`（结构参考已有缓存：rows/价格/有效期/footer_notes/来源消息），
 并把下载的**原图放进台账 `Database/images/`，文件名以 mediaId 开头**（看板 `images_for`/`_resolve_image` 按 mediaId 前缀归位取图）；
-同一张图跨群只识一次。`pipeline.py` 会把源消息的 mediaId 写进记录 `图片名`，不需要 Agent 处理任何 fileToken/附件上传。
+同一张图跨群只识一次。`pipeline.py` 会把源消息的 mediaId 写进记录 `图片名`，不需要 Agent 处理任何附件上传。
