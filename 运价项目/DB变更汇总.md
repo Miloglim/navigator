@@ -318,3 +318,25 @@
 模块导入与编译、路由 11/11 走 config、正例零误报、六类错误全抓、五类可疑全抓、干净夹具退出码 0、体检对生产库只读通过。
 `manual_check.py` 全过（含新增那条规范检查），`web_check.py` 全过，看板 8795 仍 200。
 源→运行同步 10 个文件、md5 一致，版本 5.1.1 → 5.2.0（新增能力＝minor）。
+
+## 2026-09-17（心跳定时任务重绑本库 + 水位基线推到 09-18 06:00）
+
+**任务侧**：低频 `0 9-13 * * *` 与高频 `*/10 14-18 * * *` 两条已重绑并**启用**——工作目录换成
+`运价项目/Skill/freight-rate-heartbeat`、主控 `heartbeat/run.py` → `scripts/pipeline.py`、契约 →
+`scripts/llm_output_contract.md`、图片归位改成台账 images 目录；判定步骤改为"先读队列项 `spec_path` 指向的该群规范
+→ 写判定（`rule_basis` 必须真实锚点）→ 先跑 `check_llm_out.py --date` 再 advance"，并删掉废弃的 `status_updates`/钉钉表字样。
+「运价云看板同步」任务已删除（云端链路已退役，本地台账是唯一主库）。
+
+**水位基线**（`Skill/heartbeat-data/watermark.json`，11 个群）：原值全部停在 09-10（`cma_emc_pil 17:23:17`、
+`tianjin_latam 17:36:00`、`cosco_hmm_msk_oocl 18:17:57`、`huanan_latam 18:27:25`、`one_zim_hpl_csp 18:27:20`、
+`qingdao_latam 17:50:24`、`ningbo_space 17:45:49`、`meijia_sales 10:12:36`、`dalian_latam 15:21:03`、
+`turkey_price 19:07:11`、`europe_price 17:26:05`），现统一改为 **2026-09-18 06:00:00**。
+效果：今晚 18:20–18:50 那几轮 since 落在未来 → 拉到空 → DONE，零成本；明早 9:00 那轮只收 06:00 之后的消息。
+**被跳过且不会自动补拉的窗口**＝现在起至 09-18 06:00（含深夜的土耳其/欧洲/美加报价段）。要收回：直接把 JSON 里对应 slug 写回小值
+——注意 `watermark.py set` 只许前进（防回退设计），回退必须改文件；`watermark.py get` 另有"不早于今天 00:00"的下限兜底。
+
+**顺带纠正我自己一个判断**：先前说"首轮会一次拉回近 7 天消息"是错的——`pipeline.py` 走 `watermark.py get`，
+那里有今天 00:00 的兜底下限，真实首轮窗口是"今天 00:00 → 当轮"，不是 7 天。
+
+**待观察**：两条任务启用后 `nextRunAt` 仍显示 null（已知的停摆信号）。明早请核对：
+`Skill/heartbeat-data/.work/run_0918/` 是否生成、台账「待审核」是否有增量、`watermark.json` 是否被 `pipeline.py` 往前推。
