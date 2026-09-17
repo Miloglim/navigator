@@ -34,8 +34,9 @@ powershell -ExecutionPolicy Bypass -File allow-lan.ps1    放行同事访问并�
 
 ## 数据从哪来
 
-- 一次性迁移：`python pull_from_cloud.py`（读已发布版的公开接口，写进本地库；主数据表按快照对齐并清掉改名后的旧行）。之后本地库就是唯一事实源，**不再依赖云端**。云端地址放本目录 `cloud_url.txt`。
-- 备份/回滚：`GET /api/export` 出整库快照 JSON；`python manual_server.py --import 快照.json` 灌回来。
+- 本地库是唯一事实源：一次性迁移早已完成，云端链路于 2026-09-17 整体退役（`pull_from_cloud.py` 等已删）。
+  需要回灌历史数据时用本地快照：`python manual_server.py --import 快照.json`（按主键 merge，可重复跑）。
+- 备份/回滚：`GET /api/export` 出整库快照 JSON；再用上面这条 `--import` 灌回来。代码回滚走 git。
 
 ## 自检
 
@@ -67,15 +68,19 @@ python validity_rule_check.py    有效期区间解析的表驱动用例
 | 文件 | 作用 |
 |---|---|
 | `manualdb.py` | 数据层：建表、主数据归一、指纹幂等写入、留痕、查询与折叠、频次、导出导入 |
-| `manual_server.py` | HTTP 服务，接口与已发布版一致，多 `/api/export`、`/api/import` |
-| `web/index.html` | 前端页面（本机回环免口令） |
-| `pull_from_cloud.py` | 一次性迁移入口 |
+| `manual_server.py` | HTTP 服务：读接口、`POST /api/pending` 待审入口、鉴权分档、放行/驳回、`/api/export`、`--import` |
+| `web/index.html` | 前端页面（三视图：销售端 / 航管端 / 配置端；本机回环免口令） |
 | `seed_groups_local.py` | 港群种子 |
 | `batch_import.py` | `.xlsx → CSV` |
+| `price_sanitize.py` | 海运费越界纠错（少一位数那类） |
 | `manual_check.py` / `validity_rule_check.py` | 回归与规则用例 |
+| `web_check.py` / `js_check.py` | 前端结构断言 / JS 语法解析（改 `index.html` 必跑） |
 | `start-manual.bat` / `stop-manual.bat` / `allow-lan.ps1` | 起停与放行 |
 | `token_manual.txt` | 写入令牌（首次启动自动生成；本机浏览器免口令） |
 
 ## 说明
 
-云端版（`pwle9fvs.qwenwork.host`）冻结在最后发布版本，不再迭代；今后所有更新与优化只改本目录。
+程序定位是**局域网开放 + 人工主导学习与审核**：同事浏览器打开即用（只读免口令），改数据、导整库、看待审原文才需要口令。
+
+原云端看板（`pwle9fvs.qwenwork.host`）已于 2026-09-17 退役，本目录里指向它的脚本与快照已删除；
+但那个公网页面自身仍可访问（当前库为空），**要彻底下线还需在 QW Pages 侧处理**——这条留在待办里，别忘了。

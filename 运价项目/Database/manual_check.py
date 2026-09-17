@@ -64,7 +64,8 @@ def wait_port(sec=15.0):
 
 def main() -> int:
     if not SRC_DB.exists():
-        print("先跑 pull_from_cloud.py 建库"); return 2
+        print("本地库不存在：python manual_server.py --init-only 建空库，"
+              "或 --import <快照JSON> 回灌"); return 2
     shutil.copyfile(SRC_DB, TEST_DB)
     # 副本会带上生产库里的真实待审核条目；用例靠 limit 窗口找回自己暂存的那几条，
     # 453 条 failed 排在前面会把它们挤出窗口 → 假红。回归起点清空待审（只动副本，不碰真库）
