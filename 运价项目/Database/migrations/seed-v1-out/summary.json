@@ -1,0 +1,12 @@
+{
+  "true_alias": 27,
+  "enum_norm": 9,
+  "disposal": 12,
+  "unclassified": 0,
+  "inherit": 1,
+  "self_map": 11,
+  "total": 60,
+  "groups_covered": 11,
+  "ddl_ready": 27,
+  "ddl_pending": 9
+}

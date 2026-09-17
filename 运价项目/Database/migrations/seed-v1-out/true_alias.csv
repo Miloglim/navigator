@@ -1,0 +1,28 @@
+group,alias,kind,alias_kind,target,note,source
+CMA+EMC+PIL交流群,巴拿马科隆,pod,true_alias,Cristóbal,target 命中 port,规范.md:缩写表第1行
+CMA+EMC+PIL交流群,多米尼加 CAUCEDO,pod,true_alias,Caucedo,target 命中 port,规范.md:缩写表第2行
+土耳其价格更新,ISTANBUL,pod,true_alias,Ambarli,多写法展开：2 写法均指向 Ambarli（port）,规范.md:缩写表第1行
+土耳其价格更新,伊斯坦布尔,pod,true_alias,Ambarli,多写法展开：2 写法均指向 Ambarli（port）,规范.md:缩写表第1行
+土耳其价格更新,ALIAGA,pod,true_alias,Aliağa,target 命中 port,规范.md:缩写表第2行
+大连-拉美+美加,DL,pol,true_alias,Dalian,target 命中 port,规范.md:缩写表第1行
+宁波舱位滚动更新群,NB,pol,true_alias,宁波,target 命中 port,规范.md:缩写表第1行
+宁波舱位滚动更新群,SH,pol,true_alias,上海,target 命中 port,规范.md:缩写表第1行
+宁波舱位滚动更新群,TJ,pol,true_alias,天津,target 命中 port,规范.md:缩写表第1行
+宁波舱位滚动更新群,DL,pol,true_alias,大连,target 命中 port,规范.md:缩写表第1行
+宁波舱位滚动更新群,XM,pol,true_alias,厦门,target 命中 port,规范.md:缩写表第1行
+宁波舱位滚动更新群,南美西墨西哥,pod,true_alias,WCSA、MEX,"一片多港群：南美西墨西哥 → 多值串 ['WCSA', 'MEX']，expand_cn 消费时按顿号拆行",规范.md:缩写表第2行
+宁波舱位滚动更新群,加勒比,pod,true_alias,CAR,target 命中 port_group,规范.md:缩写表第3行
+宁波舱位滚动更新群,南美东,pod,true_alias,ECSA,target 命中 port_group,规范.md:缩写表第3行
+宁波舱位滚动更新群,墨西哥,pod,true_alias,MEX,target 命中 port_group,规范.md:缩写表第3行
+欧洲价格更新,全口岸,pol,true_alias,全国基本港,多写法展开：2 写法均指向 全国基本港（port_group）,规范.md:缩写表第1行
+欧洲价格更新,全国口岸,pol,true_alias,全国基本港,多写法展开：2 写法均指向 全国基本港（port_group）,规范.md:缩写表第1行
+欧洲价格更新,POD欧基,route,true_alias,欧基港,多写法展开：2 写法均指向 欧基港（route）,规范.md:缩写表第3行
+欧洲价格更新,欧基,route,true_alias,欧基港,多写法展开：2 写法均指向 欧基港（route）,规范.md:缩写表第3行
+欧洲价格更新,Antwerp,pod,true_alias,Antwerpen,target fuzzy（对应规范名），alias 在主数据自命中 Antwerpen,规范.md:缩写表第5行
+美加线销售天团,NYC,pod,true_alias,New York,target 命中 port,规范.md:缩写表第1行
+美加线销售天团,ORF,pod,true_alias,Norfolk,target 命中 port,规范.md:缩写表第2行
+美加线销售天团,PEL,pod,true_alias,Philadelphia,target 命中 port,规范.md:缩写表第2行
+美加线销售天团,BAL,pod,true_alias,Baltimore,target 命中 port,规范.md:缩写表第2行
+美加线销售天团,HOU,pod,true_alias,Houston,target 命中 port,规范.md:缩写表第3行
+美加线销售天团,MIA,pod,true_alias,Miami,target 命中 port,规范.md:缩写表第4行
+美加线销售天团,TPA,pod,true_alias,Tampa,target 命中 port,规范.md:缩写表第4行

@@ -1,0 +1,56 @@
+# llm_out 契约（Agent 唯一智能输出的格式）
+
+每条待判定消息一个文件：`.work/llm_out_<MMDD>/<safe(msg_id)>.json`
+`safe(msg_id)` = 非 `[A-Za-z0-9_.-]` 字符替换为 `_`、截断 60。
+
+> 2026-09-10 台账化改版：记录键 = **运价台账契约的中文列名**（见 `Database/docs/agent-input-contract.md`），不再是钉钉 fieldId。
+> 记录只产出"新行"（insert）——**没有 status_update / 覆盖回写**了；售罄/调价由你产一条新记录，旧行交台账折叠视图现算当前。
+
+```json
+{
+  "msg_id": "msgXXXX==",                    // 必填，必须是 msgs_<D> 落盘文件里存在的 id（溯源铁律，pipeline.py 校验）
+  "group": "qingdao_latam",                  // 必填，群 slug
+  "decision": "records",                     // records | noise（二选一，noise 也要写文件留痕）
+  "confidence": "high",                      // high | med
+  "rule_basis": "rules.md#11",               // 判定依据锚点（可审计、可反推新模板）
+  "records": [                               // decision=records 时必填，一条消息可产多条
+    {
+      "_table": "rate",                      // rate | space（带价现舱拆两条：金额进 rate、箱量进 space）
+      "起运港": "青岛",                       // 键 = 台账契约中文字段名（可填别名/中文/港群名，归一交台账 Master）
+      "目的港": "Santos",
+      "航线": "南美西",                        // 填了必须命中台账 routes；拿不准就省略这个键
+      "船司": "MSK",
+      "柜型": "40NOR",                        // 只能 20GP/40HQ/HC/40NOR；无绝对价则省略该键
+      "海运费USD": 6500,                      // 非负整数裸价；附加费一律进备注；只有加价公式则省略
+      "有效期船期": "9/8-9/14",               // 原文展示串；pipeline.py 会用 validity_parser 解析出 有效期起/止/船期ETD
+      "备注": "free time cost USD50；VP USD29；超重费说明",
+      "价格USD": 6500,                        // space 表带价现舱才填
+      "舱位类型": "现舱",                      // space 必填，只能 11 档：现舱/加班船/放舱开放/售罄/舱位紧张/截关截单/撤载改期/箱子动态/空班/跳港/首航
+      "船名航次": "MSC VIRGO FA633A",         // space 必填
+      "箱型箱量": "1小2高",
+      "箱量": 2
+    }
+  ]
+}
+```
+
+## 禁止事项（会被台账校验打回 / 进待审核 failed）
+
+1. **不要填这些键**（pipeline.py 从落盘消息强制注入，保证逐字与真实时间）：来源群、发送人、**消息时间（真实群消息时间，agent 口径服务端保留它）**、消息原文、消息ID、记录状态、有效期起/止/船期ETD（日期列由 validity_parser 统一解析）。
+2. 不要自己算派生价：只有加价公式时省略 `海运费USD`/`柜型`（规则 11）。
+3. 引用回复的**被引用原文由 pipeline 的 `compose_text()` 自动并入 `消息原文`**（本条全文 + `——引用 时间 发送人 mID=<被引用ID>——` + 被引用逐字全文）。所以你**不要**把被引用全文再抄进 `备注`；`备注` 只补一句引用结论（如"售罄""基于原报价另减 X"）+引用时间即可。
+4. 核心字段（起运港/目的港/船司）拿不准命中不了主数据时，宁可按原样发出让台账判 failed 交人工，也**不要编一个台账里不存在的值**；航线不确定就整个键省略。
+5. noise 判定也要落一个 `{"decision":"noise","rule_basis":"extraction-rules.md#7",...}` 文件，否则下轮会重复进队列。
+6. **船名里的公司别当船司**（共船/VSA 常态，见 extraction-rules.md#18）：识别到船名就照抄进 `船名航次`，但 `船司` 只取报价来源（群画像/正文明示/发送人语境），**不得**从 `MSC OSCAR` 这类船名里反推 `船司=MSC`；来源判不出就 `船司` 留空交台账判 failed。
+7. **合并船司原样传串**（extraction-rules.md#19）：`EMC/COSCO`、`ONE/HPL/MSC/HMM` 照抄整串，**不要挑一家、也不要自己拆**——台账闸门会拆分归一并展开成 N 条。取第一家会让伴生船司静默丢失且不报错（2026-09-11 事故）。
+8. **表头没有目的港列时，分段标题就是目的港**（extraction-rules.md#20）：`加勒比→CAR`、`南美东→ECSA`、`墨西哥→MEX`、`南美西→WCSA`，按港群名存一条；`南美西墨西哥` 这种合并段同一行存 WCSA、MEX 两条。
+9. **多档柜型逐档配价**（extraction-rules.md#21）：`柜型="20GP/40HQ/HC/40NOR"` 必须配 `海运费USD="100/200/300"`；只给一个价会被逐条打回。`40GP` 不等于 `40HQ/HC`，别互相代用。
+10. **服务码/占位说明不进港口字段**（extraction-rules.md#22）：`ESE`、`BP`、`Base Port`、`Port group`、`(未注明，只去X/Y)` 一律不填 `目的港`，留空并把整串写进 `备注`。
+11. **占位符不是值**（extraction-rules.md#23）：拿不到就省略键或留空，不要写 `(未注明船名)`、`未注明`、`待定`、`无`——台账按未填处理。
+12. **被放弃的行要在备注里交代**（extraction-rules.md#24）：一格里多船期（`9.6和9.13`）拆多条各带 ETD；判断不入库的整段（如"X号跳港NB"）必须在某条 `备注` 写"本图另有 N 行跳港未拆"，不许静默丢。
+
+## 图片识别输出（另一种文件）
+
+新图识完后写 `.work/ocr_cache/<mediaId去掉@>.json`（结构参考已有缓存：rows/价格/有效期/footer_notes/来源消息），
+并把下载的**原图放进台账 `Database/images/`，文件名以 mediaId 开头**（看板 `images_for`/`_resolve_image` 按 mediaId 前缀归位取图）；
+同一张图跨群只识一次。`pipeline.py` 会把源消息的 mediaId 写进记录 `图片名`，不需要 Agent 处理任何 fileToken/附件上传。

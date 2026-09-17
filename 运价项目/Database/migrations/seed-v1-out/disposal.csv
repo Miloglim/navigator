@@ -1,0 +1,13 @@
+group,alias,kind,alias_kind,target,note,source
+CMA+EMC+PIL交流群,CAUCEDO: 9897/10157,unknown,disposal,剥掉,非 alias→target，属拆解/清洗/兜底指令,规范.md:缩写表第3行
+COSCO+HMM+MSK+OOCL交流群,WSA2 | WSA4 | SA8,pod,disposal,写进 `备注`，`目的港` 留空,非 alias→target，属拆解/清洗/兜底指令,规范.md:缩写表第3行
+COSCO+HMM+MSK+OOCL交流群,拉美,route,disposal,**航线留空**，交人工,非 alias→target，属拆解/清洗/兜底指令,规范.md:缩写表第4行
+土耳其价格更新,大货单询,price,disposal,`海运费USD` **留空**,非 alias→target，属拆解/清洗/兜底指令,规范.md:缩写表第5行
+土耳其价格更新,+ENS | 含OWS,remark,disposal,只进 `备注`,非 alias→target，属拆解/清洗/兜底指令,规范.md:缩写表第6行
+天津拉美询价群,待补,unknown,disposal,—,非 alias→target，属拆解/清洗/兜底指令,规范.md:缩写表第1行
+宁波舱位滚动更新群,9.15晚开16,schedule,disposal,`船期ETD=2026-09-15` + 原文进 `备注`,非 alias→target，属拆解/清洗/兜底指令,规范.md:缩写表第5行
+宁波舱位滚动更新群,只去Manzanillo/Lazaro/ESE,pod,disposal,拆 `Manzanillo`、`Lázaro Cárdenas` 两条；`ESE` **不是港口**，进备注,非 alias→target，属拆解/清洗/兜底指令,规范.md:缩写表第6行
+欧洲价格更新,+TAO,pol,disposal,起运港加一条 `Qingdao`,非 alias→target，属拆解/清洗/兜底指令,规范.md:缩写表第2行
+欧洲价格更新,Lisboa | Leixoes,route,disposal,**航线归属待补**（地中海 or 欧基港）,非 alias→target，属拆解/清洗/兜底指令,规范.md:缩写表第6行
+美加线销售天团,不经巴拿马,pod,disposal,**不是港口**，进 `备注`,非 alias→target，属拆解/清洗/兜底指令,规范.md:缩写表第6行
+青岛拉美运价（海外）,NOR,remark,disposal,不是舱位类型，写进 `备注`,非 alias→target，属拆解/清洗/兜底指令,规范.md:缩写表第2行

@@ -1,0 +1,10 @@
+group,alias,kind,alias_kind,target,note,source
+COSCO+HMM+MSK+OOCL交流群,BLANK SAILING,space_type,enum_norm,空班,target 由 typed_pattern 抠出,规范.md:缩写表第1行
+COSCO+HMM+MSK+OOCL交流群,停航,space_type,enum_norm,空班,target 由 typed_pattern 抠出,规范.md:缩写表第1行
+COSCO+HMM+MSK+OOCL交流群,跳挂,space_type,enum_norm,跳港,target 由 typed_pattern 抠出,规范.md:缩写表第2行
+COSCO+HMM+MSK+OOCL交流群,omit,space_type,enum_norm,跳港,target 由 typed_pattern 抠出,规范.md:缩写表第2行
+土耳其价格更新,现仓,space_type,enum_norm,现舱,target 由 typed_pattern 抠出,规范.md:缩写表第4行
+宁波舱位滚动更新群,跳港,space_type,enum_norm,跳港,,规范.md:缩写表第4行
+宁波舱位滚动更新群,空班,space_type,enum_norm,空班,,规范.md:缩写表第4行
+宁波舱位滚动更新群,首航,space_type,enum_norm,首航,,规范.md:缩写表第4行
+美加线销售天团,40H,ctype,enum_norm,40HQ/HC,target 由 typed_pattern 抠出+归一,规范.md:缩写表第5行

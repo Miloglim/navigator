@@ -1,0 +1,39 @@
+# ---- 运行时数据与日志（本机事实源，不进版本库）----
+*.db
+*.db-wal
+*.db-shm
+*.sqlite3
+*.log
+*.pid
+
+# ---- 密钥：绝不入 git（写入口令）----
+token_manual.txt
+
+# ---- 备份、归档、交付副本、快照 ----
+*.bak
+*.bak-*
+*.7z
+*.zip
+归档/
+pack/
+.trash/
+served.html
+cloud_snapshot.json
+export-*.json
+pre-*-export-*.json
+post-seed-*.json
+
+# ---- 心跳过程文件（每轮生成，可再生）----
+heartbeat-data/
+.work/
+
+# ---- 看板原图（体积大、属数据不属代码）----
+images/
+
+# ---- 工具与系统产物 ----
+__pycache__/
+*.pyc
+.codegraph/
+*.lnk
+Thumbs.db
+.DS_Store
