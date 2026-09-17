@@ -1,7 +1,7 @@
 ---
 name: freight-rate-heartbeat
 description: 钉钉群聊海运运价与舱位自动收集，写入「运价台账」待审核库。按水位线拉取指定群/置顶群消息，识别运价图片、文字报价、现舱/加班船/售罄动态，判定前先读该群的业务规范（references/群聊规范，含带"列+群"作用域的缩写表）以降低误判，产出符合台账 agent-input-contract 的中文字段记录，经机械预检后只调 POST /api/pending 进待审核（人工在看板放行才落业务表）；每条记录保留逐字原文与图片溯源。当用户提到"拉群运价""运价入库""运价台账""整理运价""置顶群运价""heartbeat 运价""舱位表""现舱""某个群的报价""今天有没有新运价""历史价格对比"时使用。
-version: 5.1.1
+version: 5.2.0
 ---
 
 # 运价心跳收集（钉钉群 → 运价台账待审核库）
@@ -71,7 +71,8 @@ version: 5.1.1
 
 ## 工具包（scripts/）
 
-`chat_sources.json`（群画像）· `ledger_contract.json`（柜型/舱位枚举 + 台账连接配置）· `ledger_client.py`（台账对接层：validate/submit/master，唯一写入口）· `record_builder.py`（模板直出中文记录）· `pipeline.py`（水位拉取 + LLM 队列 + BUILD + 同步提交）· `watermark.py`（水位线）· `validity_parser.py`（有效期唯一口径）· `llm_output_contract.md`（LLM 输出契约）。
+`chat_sources.json`（群画像 + `spec_dir` 规范路由）· `ledger_contract.json`（柜型/舱位枚举 + 台账连接配置）· `ledger_client.py`（台账对接层：validate/submit/master，唯一写入口）· `record_builder.py`（模板直出中文记录）· `pipeline.py`（水位拉取 + LLM 队列 + BUILD + 同步提交）· `watermark.py`（水位线）· `validity_parser.py`（有效期唯一口径）· `llm_output_contract.md`（LLM 输出契约）。
+2026-09-17 新增规范执行层：`spec_index.py`（群规范机器入口：slug→规范文件、缩写表、「待补」条目、可引用锚点，队列项靠它注入）· `check_llm_out.py`（判定文件只读自查：溯源/禁填键/rule_basis 锚点真伪/是否疑似没读该群规范）· `spec_alias_diff.py`（本目录缩写表 ↔ 台账 `alias_scope` 差集与断链，已挂 `manual_check.py`）。**值域仍由台账闸门判**，这三个只负责"规范有没有被执行"的可验证性，只报告不拦。
 `init_ledger.py`/`check_spec.py`/`price_history.py`/`validate.py`/`check_v3.py`/`save_pull.py` 及本机看板镜像已删除（钉钉写入链路废弃）。归一/校验以台账为准，别再自造。
 
 ## 记忆文档（每轮开工先读，被纠错当场追加）

@@ -37,5 +37,10 @@
 | `规范.md` | 定位 / 报价格式 / 缩写表（带作用域）/ 已知坑 / 解析要求 | Agent 追加 + 人工修订 |
 | `样例/`（可选，暂不建） | 该群典型消息逐字样例与正确解析对照 | 出现新模板时补 |
 
-> 群专属别名最终要落到台账 `alias_scope` 表（尚未建，见 `Database/docs/data-model-spec.md` 第 3 节）；
-> 本目录是它的**人工可读来源**，不是运行时匹配点。
+> 群专属别名已落到台账 `alias_scope` 表（`(scope_group, kind, alias)` 联合键，2026-09-16 seed，现 36 行）；
+> 本目录是它的**人工可读来源**，运行时匹配以台账为准。
+>
+> 2026-09-17 起"两边冲突以本目录为准并回写配置"这句话有机器兜底了，不再只靠 Agent 自觉：
+> ① `chat_sources.json` 每群带 `spec_dir` → `scripts/spec_index.py` 把**该群规范路径与「待补」条目注入 llm_queue 队列项**；
+> ② 判定文件的 `rule_basis` 必须是真实锚点，`scripts/check_llm_out.py` 反查（`pipeline.py` 在 BUILD 前自动跑并报告）；
+> ③ 本目录缩写表 ↔ `alias_scope` 的差集与断链由 `scripts/spec_alias_diff.py` 体检，已挂进 `Database/manual_check.py` 回归。

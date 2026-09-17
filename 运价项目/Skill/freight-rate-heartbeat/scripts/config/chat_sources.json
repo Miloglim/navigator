@@ -1,10 +1,11 @@
 {
- "_comment": "要爬取的钉钉群清单。每项：name(群名,会写进记录的 来源群) · cid(会话ID, dws chat search 查) · slug(脚本内短名) · default_pol(群无明示起运港时的兜底港/港群名) · profile(承运/常见航线/发送人画像, 供 LLM 判定与模板参考)。运行态目录不在此,见 ledger_contract.json.runtime_dir。",
+ "_comment": "要爬取的钉钉群清单。每项：name(群名,会写进记录的 来源群) · cid(会话ID, dws chat search 查) · slug(脚本内短名) · default_pol(群无明示起运港时的兜底港/港群名) · spec_dir(该群业务规范目录，Agent 判定前必读，由 spec_index.py 按此路由) · profile(承运/常见航线/发送人画像, 供 LLM 判定与模板参考)。运行态目录不在此,见 ledger_contract.json.runtime_dir。",
  "groups": [
   {
    "name": "CMA/EMC/PIL交流群",
    "cid": "cidzQjqwS4YSXyWr7fceE2KVA==",
    "slug": "cma_emc_pil",
+   "spec_dir": "references/群聊规范/CMA+EMC+PIL交流群",
    "default_pol": "华南基本港",
    "profile": {
     "carriers": [
@@ -28,6 +29,7 @@
    "name": "天津拉美询价群",
    "cid": "cidFt6iQAGJrcefNu394z//Gw==",
    "slug": "tianjin_latam",
+   "spec_dir": "references/群聊规范/天津拉美询价群",
    "default_pol": "天津",
    "profile": {
     "carriers": [
@@ -53,6 +55,7 @@
    "name": "COSCO/HMM/MSK/OOCL交流群",
    "cid": "cidH85zQAbLlbEF5BFM7mxJPg==",
    "slug": "cosco_hmm_msk_oocl",
+   "spec_dir": "references/群聊规范/COSCO+HMM+MSK+OOCL交流群",
    "default_pol": "华南基本港",
    "profile": {
     "carriers": [
@@ -82,6 +85,7 @@
    "name": "华南-拉美",
    "cid": "cid1s7ja14jUIbYXIZO9Tj1gA==",
    "slug": "huanan_latam",
+   "spec_dir": "references/群聊规范/华南-拉美",
    "default_pol": "华南基本港",
    "profile": {
     "carriers": [
@@ -112,6 +116,7 @@
    "name": "ONE/ZIM/WHL/HPL/CSP 交流群",
    "cid": "cidEiSUpDr9+wINkGmQ/8ggpA==",
    "slug": "one_zim_hpl_csp",
+   "spec_dir": "references/群聊规范/ONE+ZIM+WHL+HPL+CSP交流群",
    "default_pol": "华南基本港",
    "profile": {
     "carriers": [
@@ -141,6 +146,7 @@
    "name": "青岛拉美运价（海外）",
    "cid": "cid4Z20hJsZekaGeLu1wu4mng==",
    "slug": "qingdao_latam",
+   "spec_dir": "references/群聊规范/青岛拉美运价（海外）",
    "default_pol": "青岛",
    "profile": {
     "carriers": [
@@ -167,6 +173,7 @@
    "name": "宁波舱位滚动更新群",
    "cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
    "slug": "ningbo_space",
+   "spec_dir": "references/群聊规范/宁波舱位滚动更新群",
    "default_pol": "宁波",
    "profile": {
     "carriers": [
@@ -199,6 +206,7 @@
    "name": "美加线销售天团",
    "cid": "cidysxmcSWynwvefzoEYibQPg==",
    "slug": "meijia_sales",
+   "spec_dir": "references/群聊规范/美加线销售天团",
    "default_pol": "华南基本港",
    "profile": {
     "carriers": [
@@ -220,6 +228,7 @@
    "name": "大连-拉美/美加",
    "cid": "cidYnK3GzzuKtkKjUw5xkvVhA==",
    "slug": "dalian_latam",
+   "spec_dir": "references/群聊规范/大连-拉美+美加",
    "default_pol": "大连",
    "profile": {
     "carriers": [
@@ -242,6 +251,7 @@
    "name": "土耳其价格更新",
    "cid": "cidycQtZjJla+WxNY9xTK6BwQ==",
    "slug": "turkey_price",
+   "spec_dir": "references/群聊规范/土耳其价格更新",
    "default_pol": "华南基本港",
    "profile": {
     "carriers": [
@@ -269,6 +279,7 @@
    "name": "欧洲价格更新",
    "cid": "cidTKlF4IcDiQonoNQY3qkHow==",
    "slug": "europe_price",
+   "spec_dir": "references/群聊规范/欧洲价格更新",
    "default_pol": "全国基本港",
    "profile": {
     "carriers": [

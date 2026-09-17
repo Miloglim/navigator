@@ -3,23 +3,18 @@
 > 约定：凡我在**未逐条请示**下对「台账库 / 主数据 / 采集配置」做的改动，都记在这里备查、可否决。日期倒序，最新在上。每条给「缘由」和「回退方法」。
 
 ---
----
 
-## 2026-09-17（前端：航管端功能区默认折叠）
+## 2026-09-17（前端：功能区折叠——实现后按你要求撤销，净变化为零）
 
-**缘由**：你要求"航管端每个卡片（＝功能区组件，带标题的区块）都要可折叠，且默认折叠，否则全部铺开影响信息检索"。我第一轮误做成"报价工单卡折叠"，已完整回滚。
+**经过**：你先要求"航管端每个卡片（＝功能区组件，带标题的区块）可折叠且默认折叠"。我第一版误做成"报价工单卡折叠"，回滚后重做为功能区折叠（`.zone-title` 区块收进 `.zf`、默认折叠、状态记本地、页签行加全部展开/折叠），随后你改主意要求**不要折叠效果**，已把四段改动**全部精准摘除**。
 
-**动作**（只改 `Database/web/index.html`，未动台账库/主数据）：
+**终态**：`web/index.html` 相对撤销前快照**纯删 60 行、零新增**，残留折叠符号 0，`js_check`（3416 行）/ `web_check` 通过。**本轮前端净变化为零**，台账库与主数据全程未动。
 
-1. 新增 `zoneFoldInit/zoneFoldAll/zfSetAll/zfSetOpen/zfToggle`：把每个 `.zone-title` 及其后直到下一个标题的兄弟收进 `.zf` 容器，**默认折叠**（只留标题条），点标题展开；标题条上的按钮（跑一次扫描 / 全库体检 / 刷新）不触发折叠。
-2. 展开状态记本地 `localStorage['freightboard.zones']`（键＝面板 id + 标题前 24 字），刷新后保持；航管端页签行新增「全部展开 / 全部折叠」两个按钮，只作用于当前面板。
-3. 覆盖范围：运价录入 / 舱位录入 / 价舱管理 / 候选管理 / 待审核 / 批量导入 / 主数据（账号库·群聊库·映射库·别名·影子·候选）等所有 `.ops-panel` 功能区；销售端不受影响。
+**事故留痕（本轮唯一沉淀，务必记住）**：我第一版在同一个 `<script>` 里定义了 `function foldKey(box, el, i)`，**覆盖了另一会话 13:47 写入的 `function foldKey(s)`**（主数据别名索引 `buildAliasIndex`、联想 `acQuery`、`normPortTok` 都在用它）——`web/index.html` 只有一个 `<script>`，同名顶层函数**后者静默覆盖前者**，等于不报错地改坏别人的功能。已改名 `zf*` 前缀并最终撤销。规矩：往这个文件加函数前先 `grep 'function 名字(' web/index.html`；改完与改前快照逐行 diff，确认只动自己的行。教训已写入 `Skill/.../references/learnings.md`。
 
-**事故留痕（重要）**：我第一版在同一个 `<script>` 里定义了 `function foldKey(box, el, i)`，**覆盖了另一会话 13:47 写入的 `function foldKey(s)`**（主数据别名索引 `buildAliasIndex`、联想 `acQuery`、`normPortTok` 都在用它）——单文件前端里同名顶层函数后者赢，等于静默改坏别人的功能。已回滚并改名为 `zf*` 前缀。教训写进 `Skill/.../references/learnings.md`。
+**另一件事（仍待协调）**：另一会话正在用 `split_ops_view.py` 把航管端的 批量导入/库管理/别名管理/影子重放 拆到新的"配置端"角色视图，会**重写 `switchRole`/`switchOpsTab` 并瘦身页签条**。我这些改动已撤销，不再与它冲突；但它落地后若要再谈折叠，需按新的视图结构重做。
 
-**实测**：`js_check`（3437 行）/ `web_check` / `manual_check` 全部通过；与改动前备份逐行 diff 确认**未删除另一会话任何一行**（删除的 72 行全部是我自己上一轮加的工单卡折叠）。备份：`正式版运价库/index.html.bak-foldfix-142909`。
-
-**回退**：删掉 CSS 的 `.zf*` 规则块、JS 的"功能区折叠"块、页签行两个按钮、BOOT 处 `zoneFoldAll();` 一行即可；或用上述备份覆盖。
+**快照**：`正式版运价库/index.html.bak-foldfix-142909`（折叠前）、`index.html.bak-unfold-*`（撤销前，含另一会话同期改动）。
 
 ---
 
@@ -294,3 +289,32 @@
 - 唯一没动的同源代码词：`manualdb.py:384` 图片字段容错读键里的 `"fileToken"`——那是入站 payload 的键名兜底不是文案，且该文件今天另有改动在飞，要清就单独说。
 
 自查：两份副本 grep「AI 表格|多维表|aitable|钉钉表|fieldId|baseId|fileToken」已只剩上面那条代码兜底；`ledger_contract.json` 仍是合法 JSON；skill 内 `.py` 全部编译通过。
+
+## 2026-09-17（心跳规范从"靠自觉"变成"可校验" · skill v5.2.0）
+
+问题：`群聊规范/` 的强制力此前全是 prose——脚本零引用该目录、`chat_sources.json` 没有规范路径、
+队列项不带依据字段，"每轮先读该群规范"只能指望 Agent 自觉；README 还写着 `alias_scope`「尚未建」，
+而库里已 36→37 行。本轮补三道机械关卡（值域硬拦仍在台账闸门，这三处只报告不拦）：
+
+1. **路由数据化**：`chat_sources.json` 11 个群各加 `spec_dir`；新增 `scripts/spec_index.py`
+   解析规范文件（缩写表按"写法/含义/归一目标/作用域"读成结构化行、「待补」条目、`##` 小节锚点、
+   `extraction-rules.md` 的 25 个条款号），`pipeline.py` 生成 `llm_queue` 时把 `spec_path`/`spec_todo`
+   注入每一项 → Agent 不再需要人肉对 README 的映射表，定位不到规范的群会当场报出。
+2. **依据可校验**：契约沿用已有的 `rule_basis` 字段（不另造 spec_refs），新增 `scripts/check_llm_out.py`
+   反查：溯源（msg_id 必须在落盘消息里）、禁填键、decision/_table/slug 合法为**错误**；
+   柜型三档/舱位十一档/逐档配价/占位符/锚点真伪/"用了该群缩写却没引用本群规范"为**可疑**。
+   BUILD 合并 llm_out 前自动跑一次并打印汇总；`python scripts/check_llm_out.py --date <MMDD>` 可单独跑。
+3. **漂移体检**：新增 `scripts/spec_alias_diff.py`，规范缩写表 ↔ `alias_scope` 求差集（含语义分诊：
+   规范写"留空/不是港口/交人工"的叫别登记、写法即规范值/港群的叫自映射，都不算缺失），
+   并查断链（配置 `spec_dir` 是否指得到、规范头部 slug/群名与配置是否一致、引用的 `.md` 是否存在）。
+   已挂进 `manual_check.py`：断链或目标冲突才判红，待登记只进 detail。今天实测：规范 54 行、库里 37 行、
+   待登记 1（`欧洲价格更新/pol/+TAO→Qingdao`）、库里未写 2、冲突 0、断链 0。
+
+附带修掉两处过期与一个自测发现的 bug：`extraction-rules.md` 第 1 条引用的 `memory.md` 已不存在 → 改指 `learnings.md`；
+`群聊规范/README.md` 的「alias_scope 尚未建」改成现状；`resolve_basis` 判全局条款号时拿 `#7`/`7` 去比完整锚点串，
+导致所有有效条款全被判"不存在"——已修（`extraction-rules.md#7` 现在正确通过，`#999` 报"现有 1…25"）。
+
+测试：`test_spec_layer.py`（合成夹具在临时目录，`FRT_RUNTIME_DIR` 指过去，不碰生产库/不连服务）5 组全过——
+模块导入与编译、路由 11/11 走 config、正例零误报、六类错误全抓、五类可疑全抓、干净夹具退出码 0、体检对生产库只读通过。
+`manual_check.py` 全过（含新增那条规范检查），`web_check.py` 全过，看板 8795 仍 200。
+源→运行同步 10 个文件、md5 一致，版本 5.1.1 → 5.2.0（新增能力＝minor）。

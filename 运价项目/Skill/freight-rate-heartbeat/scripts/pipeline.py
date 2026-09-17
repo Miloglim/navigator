@@ -31,6 +31,8 @@ sys.path.insert(0, HERE)
 # 有效期解析口径单一事实源：record_builder.vdates = norm_v + validity_parser.parse。
 from record_builder import vdates, compose_text
 import ledger_client as db_client  # 台账对接层：唯一写入口 /api/pending，预检 /api/validate，主数据 /api/master
+import spec_index                  # 「群聊规范」机器入口：slug→规范路径、缩写表、待补条目、可引用锚点
+import check_llm_out as llm_check   # 判定文件只读自查：越权键 + 规范执行痕迹（只报告，不抢台账闸门）
 
 SPEC = P.CONTRACT
 GROUPS = P.chat_groups()
@@ -239,7 +241,14 @@ def run_parse(d, st):
                                   "reason": ("需识图并写ocr_cache " if need_ocr else "")
                                             + ("需下载原图存台账images目录" if need_file else ""),
                                   "img": [mid], "need_ocr": need_ocr, "need_image": need_file})
-    queue = {q["id"] + "|" + q.get("reason", ""): q for q in queue}.values()
+    queue = list({q["id"] + "|" + q.get("reason", ""): q for q in queue}.values())
+    # 规范路由数据化：队列项直接带"该读哪份规范 + 有几条待补"，Agent 不用再人肉对 README 的映射表
+    no_spec = []
+    for q in queue:
+        b = spec_index.brief(q.get("group"))
+        q.update(b)
+        if not b["spec_path"]:
+            no_spec.append(str(q.get("group") or "?"))
     st["stage"] = "LLM_PENDING" if queue else "BUILD"
     save_state(d, st)
     if not queue:
@@ -247,15 +256,22 @@ def run_parse(d, st):
         return
     qf = os.path.join(rdir(d), "llm_queue.json")
     with open(qf, "w", encoding="utf-8") as f:
-        json.dump(list(queue), f, ensure_ascii=False, indent=1)
-    emit(["# 阶段 LLM：%d 项待判定，清单见 %s" % (len(list(queue)), qf),
-          "# Agent 职责（唯一需要智能的一步）：",
-          "# 1) 读 scripts/llm_output_contract.md 契约与 .work 里的消息原文",
-          "# 2) 新图：dws 下载原图 → Read 识图 → 写 .work/ocr_cache/<mediaId>.json；"
-          "并把下载到的原图放进台账 %s（文件名以 mediaId 开头，看板按 mediaId 归位取图）→ 重跑 next" % img_dir,
-          "# 3) 每条判定写 .work/llm_out_%s/<safe(msg_id)>.json（严格按契约）" % d,
-          "# 4) 全部写好后执行：",
-          "# " + runpy() + " advance"])
+        json.dump(queue, f, ensure_ascii=False, indent=1)
+    tips = ["# 阶段 LLM：%d 项待判定，清单见 %s" % (len(queue), qf),
+            "# Agent 职责（唯一需要智能的一步）：",
+            "# 1) 读 scripts/llm_output_contract.md 契约 + 每条队列项 spec_path 指向的该群规范"
+            "（spec_todo 列出的条目＝尚无实测依据，禁止猜填，按全局口径留空交人工）",
+            "# 2) 新图：dws 下载原图 → Read 识图 → 写 .work/ocr_cache/<mediaId>.json；"
+            "并把下载到的原图放进台账 %s（文件名以 mediaId 开头，看板按 mediaId 归位取图）→ 重跑 next" % img_dir,
+            "# 3) 每条判定写 .work/llm_out_%s/<safe(msg_id)>.json（严格按契约），"
+            "rule_basis 必须落在真实锚点：规范.md#小节 或 extraction-rules.md#条款号" % d,
+            "# 4) 全部写好后先自查：python scripts/check_llm_out.py --date %s"
+            "（错误清零再推进；⚠ 可疑项交人工看，别自己放行）" % d,
+            "# 5) " + runpy() + " advance"]
+    if no_spec:
+        tips.insert(2, "# ⚠ 这些群没定位到规范文件（先补 references/群聊规范/<群>/规范.md 并在 chat_sources 填 spec_dir）：%s"
+                    % ", ".join(sorted(set(no_spec))))
+    emit(tips)
 
 
 def _image_present(img_dir, media_id):
@@ -323,6 +339,13 @@ def step_build(d, st):
     # 2026-09-17 审查修复：加 new_ids 门控（与 draft 分支一致）。llm_out_<D>/ 按天累积不清，
     # cron 同日多轮时每轮 glob 到全天判定文件，无门控会把早轮记录全部重建重投 → 重复入库
     ldir = os.path.join(WORK, "llm_out_%s" % d)
+    # 规范执行自查（只报告不拦）：台账闸门负责值域，这里负责"越权键 + 依据是否真锚点 + 是否疑似没读该群规范"
+    try:
+        _rep = llm_check.check(d, msgs_by_id=msgs_by_id)
+        if _rep["n_err"] or _rep["n_warn"]:
+            emit(llm_check.summary_lines(_rep))
+    except Exception as _e:
+        emit(["# ⚠ 判定自查没跑成（不影响提交）：%s" % _e])
     for _p in (sorted(glob.glob(os.path.join(ldir, "*.json"))) if os.path.isdir(ldir) else []):
         _d = json.load(open(_p, encoding="utf-8"))
         for o in (_d if isinstance(_d, list) else [_d]):

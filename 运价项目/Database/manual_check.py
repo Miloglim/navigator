@@ -647,6 +647,24 @@ def main() -> int:
         st, s2 = call("/api/stats")
         ck("测试行清理干净", s2.get("ratesTotal") == 0 and s2.get("spaceTotal") == 0,
            {k: s2.get(k) for k in ("ratesTotal", "spaceTotal")})
+
+        # 规范 ↔ 台账一致性：读本轮副本（不碰真库、不依赖服务）。断链/目标冲突才算红，
+        # 「待登记」「库里多出来」是交人工补录的提示，只进 detail。
+        sp = HERE.parent / "Skill" / "freight-rate-heartbeat" / "scripts" / "spec_alias_diff.py"
+        name = "规范缩写表↔alias_scope：无断链、无目标冲突"
+        if not sp.exists():
+            ck(name, False, "skill 脚本缺失：%s" % sp)
+        else:
+            try:
+                rr = subprocess.run([PY, str(sp), "--db", str(TEST_DB), "--json", "--strict"],
+                                    cwd=str(sp.parent), capture_output=True, text=True, timeout=90)
+                dd = json.loads(rr.stdout or "{}")
+                ck(name, rr.returncode == 0,
+                   {"规范行": dd.get("n_spec_rows"), "库里行": dd.get("n_alias_rows"),
+                    "待登记": len(dd.get("only_in_spec") or []), "库里未写": len(dd.get("only_in_db") or []),
+                    "冲突": len(dd.get("target_mismatch") or []), "断链": dd.get("broken_links") or []})
+            except Exception as e:
+                ck(name, False, "跑不起来：%s" % e)
     finally:
         proc.terminate()
         try:
