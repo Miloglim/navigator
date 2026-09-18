@@ -418,3 +418,13 @@
 两处遗留写进 `Database/ops/reports/Istanbul改写审核-2026-09-18.md`：① `payload` 存的是归一值（根因 `stage_pending` 先 expand_cn 再落库，
 `manualdb.py` 另一会话 11:34 正在改，我没动）；② 同步候选扫描缺"目标值必须命中主数据才改待审行"的护栏。
 主数据缺口（天津 90、YT 38、中远海特 19、BRVCO 6）需要命名口径，未擅自新建。
+
+## 2026-09-18（天津按行业口径建 Xingang、中远海特/BREVCO/YT 补齐，待审 failed 193→57）
+
+另一会话只删了错实体未建对的，且 `全国基本港.members` 仍悬空引用 `Tianjin New Port`。补：新建 `ports` Xingang
+（CN／city 天津／locode CNTSN，aliases 含 天津·Tianjin·天津新港·**Tianjin New Port**，让 38 条历史行不改数据即命中）；
+港群成员换成 Xingang；新建 carriers `COSCO SPECIALTY／中远海特`（原文以【中远海特】独立发价，SCAC 待补）；
+作用域别名 `BRVCO→Vila do Conde`（同句 Manaus/Villa Do Conde 为证）、`YT→Yantian`
+（OCR 列头「适用 YT/SK/NS/SH/NB/TJ/QD/DL（不含福建/厦门）」即八基本港）。存量重判后待审 failed 193→57、passed 430。
+剩 57 行是三类口径待定：必填为空 32（正常交人工）、`+` 是否为并列分隔符（`+TAO` 与之冲突，且 manualdb 有会话在改）、
+`ECSA via X` 是否豁免主数据命中 —— 均未擅自改判据，写在 `Database/ops/reports/Istanbul改写审核-2026-09-18.md`。
