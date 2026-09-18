@@ -37,3 +37,6 @@ __pycache__/
 *.lnk
 Thumbs.db
 .DS_Store
+
+# 审查任务的原始 runlogs 转储（报告 .md 入库留痕，原始 JSON 不入库）
+**/ops/reports/runlogs-*.json
