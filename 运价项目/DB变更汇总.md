@@ -405,3 +405,16 @@
   ② 暂存同区间两条 → 锚点改成 09-20→09-26 → 同步另一条（起止一起变）→ 人工放行 → 读回业务表 `valid_from/valid_to` 就是新值。
 - 生效条件：新接口要重启台账服务（当前跑着的进程是旧的，`/api/pending/sync` 会 404）；前端 index.html 是运行时直读，刷新页面即可。
 - 本次无表结构变更（不加列、不加表），`pending_records` 只是 payload/edit_log 里多一个键。
+
+## 2026-09-18（土耳其群 Istanbul 被改写：审核、主数据修正、20 行数据恢复）
+
+用户裁决「群里出现的目的港原样可用，Istanbul 就是 Istanbul」。审核确认判定层无误（agent 写 ISTanbul 且 rule_basis 正确引用本群规范），
+改写来自台账归一的**两层**：`alias_scope` 的 ISTANBUL/伊斯坦布尔→Ambarli，加上 `ports.Ambarli.aliases` 本身含 Istanbul/伊斯坦布尔
+——只删别名不够，这解释了为什么之前删了 Izmit 还会犯同类错。
+处理：新建 `ports` Istanbul（TR，TRIST）；从 Ambarli 别名删掉两个 Istanbul 写法；删两条 alias_scope；
+登记作用域别名 EVPTY→Evyap、MEISIN→Mersin（错拼变体，不新增假港）；预检验证四类写法归一结果各自正确。
+数据恢复 20 行：7 行被另一会话「同步候选扫描」写成 `Ist`/`istan`（主数据不存在），13 行被归一改写成 `Ambarli` ——
+全部按各行消息原文恢复，原文两者都没写的 4 行（id 156/157/869/870，纯图片消息）留人工；EVPTY/MEISIN 存量 16 行重判，11 行转 passed。
+两处遗留写进 `Database/ops/reports/Istanbul改写审核-2026-09-18.md`：① `payload` 存的是归一值（根因 `stage_pending` 先 expand_cn 再落库，
+`manualdb.py` 另一会话 11:34 正在改，我没动）；② 同步候选扫描缺"目标值必须命中主数据才改待审行"的护栏。
+主数据缺口（天津 90、YT 38、中远海特 19、BRVCO 6）需要命名口径，未擅自新建。
