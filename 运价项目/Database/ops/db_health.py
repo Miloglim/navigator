@@ -144,24 +144,22 @@ def check():
     except (sqlite3.Error, OSError) as e:
         add("FAIL", "E 存储", "读不了：%s" % e)
 
-    # F 图片完整性
+    # F 图片完整性：image_file 存的是带前导 @ 的 mediaId，images/ 里文件名是 <mediaId>_宽_高.png，
+    # 所以必须剥 @ 再做词干前缀匹配；并按唯一引用计数（一张周表会被几十条记录共用）
     try:
-        have = {f.name for f in IMAGES.iterdir()} if IMAGES.is_dir() else set()
-        miss = 0
-        refs = 0
+        have = sorted(f.name for f in IMAGES.iterdir()) if IMAGES.is_dir() else []
+        refs = set()
         for t in ("freight_rates", "space_records"):
             for (v,) in _sql("select image_file from %s where image_file is not null and image_file<>''" % t):
                 for name in str(v).replace(";", ",").split(","):
-                    name = name.strip()
-                    if not name:
-                        continue
-                    refs += 1
-                    if name not in have and not any(h.startswith(name[:16]) for h in have):
-                        miss += 1
-        add("WARN" if miss else "PASS", "F 图片",
-            "引用 %d 处，缺图 %d 处（images/ 现有 %d 个文件）" % (refs, miss, len(have)),
-            "缺图会让看板「原图溯源」显示不出来：原图要从钉钉重新下载归位（文件名以 mediaId 开头）"
-            if miss else "")
+                    if name.strip():
+                        refs.add(name.strip())
+        missing = sorted(r for r in refs if not any(h.startswith(r.lstrip("@")[:16]) for h in have))
+        add("WARN" if missing else "PASS", "F 图片",
+            "唯一引用 %d 张，命中 %d 张，真缺 %d 张（images/ 现有 %d 个文件）"
+            % (len(refs), len(refs) - len(missing), len(missing), len(have)),
+            ("缺图会让看板「原图溯源」显示不出来：按消息原文里的 mediaId 重新下载归位；缺的样例 "
+             + ", ".join(missing[:3])) if missing else "")
     except (sqlite3.Error, OSError) as e:
         add("WARN", "F 图片", "查不了：%s" % e)
 

@@ -4,17 +4,21 @@
 
 ---
 
-## 2026-09-17（前端：功能区折叠——实现后按你要求撤销，净变化为零）
+## 2026-09-17（前端：功能区默认折叠——撤销后按新双视图结构重做，已上线）
 
-**经过**：你先要求"航管端每个卡片（＝功能区组件，带标题的区块）可折叠且默认折叠"。我第一版误做成"报价工单卡折叠"，回滚后重做为功能区折叠（`.zone-title` 区块收进 `.zf`、默认折叠、状态记本地、页签行加全部展开/折叠），随后你改主意要求**不要折叠效果**，已把四段改动**全部精准摘除**。
+**经过**：你先要求"航管端每个卡片（＝功能区组件，带标题的区块）可折叠且默认折叠"。第一版我误做成"报价工单卡折叠"→ 回滚重做为功能区折叠 → 你改主意要求撤销（纯删 60 行、净变化归零）→ 等另一会话的视图拆分落地（`OPS_TABS` 5 ＋ 新 `CFG_TABS` batch/admin/alias/shadow ＋ `view-config`）后，**按新结构重做并重新上线**。
 
-**终态**：`web/index.html` 相对撤销前快照**纯删 60 行、零新增**，残留折叠符号 0，`js_check`（3416 行）/ `web_check` 通过。**本轮前端净变化为零**，台账库与主数据全程未动。
+**最终实现**（只改 `Database/web/index.html`，未动台账库/主数据）：
 
-**事故留痕（本轮唯一沉淀，务必记住）**：我第一版在同一个 `<script>` 里定义了 `function foldKey(box, el, i)`，**覆盖了另一会话 13:47 写入的 `function foldKey(s)`**（主数据别名索引 `buildAliasIndex`、联想 `acQuery`、`normPortTok` 都在用它）——`web/index.html` 只有一个 `<script>`，同名顶层函数**后者静默覆盖前者**，等于不报错地改坏别人的功能。已改名 `zf*` 前缀并最终撤销。规矩：往这个文件加函数前先 `grep 'function 名字(' web/index.html`；改完与改前快照逐行 diff，确认只动自己的行。教训已写入 `Skill/.../references/learnings.md`。
+1. `zoneFoldInit / zoneFoldAll / zfSetAll / zfSetOpen / zfToggle`：每个 `.zone-title` 及其后直到下一个标题的兄弟收进 `.zf` 容器，**默认只留标题条**，点标题展开；标题条上的按钮（跑一次扫描 / 全库体检 / 刷新等）不触发折叠。
+2. 扫描按 **`[id^="panel-"]`** 而非 `.ops-panel` 类名 ⇒ **航管端 5 个面板 + 配置端 4 个面板全覆盖**，将来再拆视图也不用改；`zfSetAll` 只作用于当前可见面板，两排页签各加「全部展开 / 全部折叠」。
+3. 开合状态记本地 `localStorage['freightboard.zones']`（键＝面板 id + 标题前 24 字），刷新与切视图后保持。
 
-**另一件事（仍待协调）**：另一会话正在用 `split_ops_view.py` 把航管端的 批量导入/库管理/别名管理/影子重放 拆到新的"配置端"角色视图，会**重写 `switchRole`/`switchOpsTab` 并瘦身页签条**。我这些改动已撤销，不再与它冲突；但它落地后若要再谈折叠，需按新的视图结构重做。
+**实测**：`js_check`（3473 行）/ `web_check` 通过；与重做前快照逐行 diff＝**纯新增 73 行、删除 0 行**（没吃掉另一会话任何一行）；`foldKey` 定义数仍为 1；线上页面已含新代码，刷新即生效。
 
-**快照**：`正式版运价库/index.html.bak-foldfix-142909`（折叠前）、`index.html.bak-unfold-*`（撤销前，含另一会话同期改动）。
+**事故留痕（本轮沉淀，务必记住）**：第一版曾在同一个 `<script>` 里定义 `function foldKey(box, el, i)`，**覆盖了另一会话 13:47 写入的 `function foldKey(s)`**（别名索引 `buildAliasIndex`、联想 `acQuery`、`normPortTok` 都在用）——`web/index.html` 只有一个 `<script>`，同名顶层函数**后者静默覆盖前者**，不报错地改坏别人的功能。现已全部改用 `zf*` 前缀。规矩：往这个文件加函数前先 `grep 'function 名字(' web/index.html`；改完与改前快照逐行 diff，确认只动自己的行。教训已写入 `Skill/.../references/learnings.md`。
+
+**快照**：`index.html.bak-foldfix-142909`（首次折叠前）、`index.html.bak-unfold-*`（撤销前）、`index.html.bak-zone-*`（重做前）。回退＝删 CSS 的 `.zf*` 块、JS 的"功能区折叠"块、两排页签的按钮 span、BOOT 处 `zoneFoldAll();` 一行。
 
 ---
 
@@ -340,3 +344,21 @@
 
 **待观察**：两条任务启用后 `nextRunAt` 仍显示 null（已知的停摆信号）。明早请核对：
 `Skill/heartbeat-data/.work/run_0918/` 是否生成、台账「待审核」是否有增量、`watermark.json` 是否被 `pipeline.py` 往前推。
+
+## 2026-09-18（按"全改"执行：主数据补录 + 别名清理 + 图片还原，含三处我自己的错）
+
+**做了的**
+- 航线补录（依据 `extraction-rules.md` 第 2 条工作台口径，库里原本只有 地东/地中海/欧基港）：新建 `routes` 地西（aliases 西地中海,western med,wemed）、希腊；把「亚德里海」并入现有航线 `亚得里亚海` 的 `aliases`（按契约全局叫法进 `routes.aliases`，不进 `alias_scope`）。走 `/api/master/save` 写，服务侧 `get_master` TTL 300s 自动跟上。
+- 效果：待审 failed 从 451 行里的 185 → **101**；航线类 failed 76 → **0**（`resolve_unmapped_ports.py --write` 顺带重判，32 行转 passed）。
+- 图片：昨天被 `purge_files_recyclebin.py` 清掉的 76 个 `Database/images` 文件已从回收站复制还原（现在 80 个文件）。
+- 别名清理：删掉恒等别名（alias==target）**5 条** —— 本意只删 resolve 脚本因我新建航线而产生的 2 条噪音（`地西→地西`、`希腊→希腊`），但我的条件是"凡 trim 后相等就删"，多删了 3 条 `宁波舱位滚动更新/space_type/跳港·空班·首航`（今天候选批准流程产的行）。这 3 档早已在十一档枚举里、恒等别名对闸门无影响，`manual_check` 全过；要还原我可以按 alias_scope 契约一行补回。
+
+**没做、需要你的**
+- `operators` 仍 0 行、266 次放行 `reviewed_by=unknown`：11 个群的 `chat_groups.owner` 全为 None，没有任何可信来源生成账号，编造会直接错配分区可见性 → 需要姓名清单。
+- VACUUM（碎片率 53.5%）：要停服务，而此刻有会话正在写库 → 延后，等空闲时 stop→VACUUM→start，约 30 秒。
+- 20 个"库里查无此港"的值 + 2 个 difflib **误配**（`Arrecife`↔`Recife`、`Las Palmas`↔`La Paloma`，跨洲跨国）已写进 `ops/reports/主数据待补-2026-09-18.md`，不自动补。
+
+**我自己错的三处（都已修）**
+1. `ops/db_health.py` 图片判据错：按行累加 + 没剥 `@` 前缀 → 报"缺图 134"，实际唯一引用 4 张、**真缺 0**。判据已改成唯一引用 + 剥 `@` 词干匹配。
+2. `heartbeat_perf.py` 最初读 `state.json`，实测发现每轮 DONE 后被重置，当天产出会丢 → 改用 raw/llm_out/ocr_cache 的 mtime 聚类重建轮次 + 台账 `created_at` 算入库。
+3. `pending_review.py` 最初按 `edit_log` 非空算"人工改过"，把 266 条放行留痕当成修改、正确率成了空转 → 改成必须 `orig_payload` 与 `payload` 有字段差异（真改过 1 行）。
