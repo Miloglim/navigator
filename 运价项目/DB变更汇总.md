@@ -422,9 +422,10 @@
 ## 2026-09-18（天津按行业口径建 Xingang、中远海特/BREVCO/YT 补齐，待审 failed 193→57）
 
 另一会话只删了错实体未建对的，且 `全国基本港.members` 仍悬空引用 `Tianjin New Port`。补：新建 `ports` Xingang
-（CN／city 天津／locode CNTSN，aliases 含 天津·Tianjin·天津新港·**Tianjin New Port**，让 38 条历史行不改数据即命中）；
+（CN／city 天津／locode CNTXG，aliases 含 天津·Tianjin·天津新港·**Tianjin New Port**，让 38 条历史行不改数据即命中）；
 港群成员换成 Xingang；新建 carriers `COSCO SPECIALTY／中远海特`（原文以【中远海特】独立发价，SCAC 待补）；
 作用域别名 `BRVCO→Vila do Conde`（同句 Manaus/Villa Do Conde 为证）、`YT→Yantian`
 （OCR 列头「适用 YT/SK/NS/SH/NB/TJ/QD/DL（不含福建/厦门）」即八基本港）。存量重判后待审 failed 193→57、passed 430。
 剩 57 行是三类口径待定：必填为空 32（正常交人工）、`+` 是否为并列分隔符（`+TAO` 与之冲突，且 manualdb 有会话在改）、
 `ECSA via X` 是否豁免主数据命中 —— 均未擅自改判据，写在 `Database/ops/reports/Istanbul改写审核-2026-09-18.md`。
+更正：Xingang 的 LOCODE 由我误写 CNTSN，按用户口径改为 **CNTXG**（aliases 同步替换，防止将来另建"天津"实体时两码撞在同一港点）；预检复验 天津/Tianjin/Tianjin New Port/Xingang/CNTXG 五种写法均归一到 Xingang。
