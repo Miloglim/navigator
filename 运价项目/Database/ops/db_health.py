@@ -40,7 +40,8 @@ WM = PROJ / "Skill" / "heartbeat-data" / "watermark.json"
 SNAPSHOT_GLOBS = [str(PROJ.parent / "归档" / "**" / "*.json"), str(DB_DIR / "*export*.json")]
 
 # 阈值
-FRAG_WARN = 0.20          # 空闲页占比超过它 → 建议 VACUUM
+FRAG_WARN = 0.20          # 空闲页占比阈值
+FRAG_SIZE_MIN = 200e6     # 且库文件超过这个量级 —— 两者都满足才建议 VACUUM（做它要停服务，小库不值得）
 STALE_PENDING_H = 24      # 最老待审等待小时数
 STALE_SNAPSHOT_D = 7      # 快照超过几天算旧
 STALE_WM_H = 26           # 水位线超过几小时没推进
@@ -133,10 +134,12 @@ def check():
         pc = _sql("PRAGMA page_count")[0][0]
         fl = _sql("PRAGMA freelist_count")[0][0]
         frag = fl / pc if pc else 0
-        add("WARN" if frag > FRAG_WARN else "PASS", "E 存储",
-            "库 %.1f MB，空闲页占比 %.1f%%（%d/%d 页）" % (size / 1e6, 100 * frag, fl, pc),
-            "碎片超 %d%%：停服务后跑一次 VACUUM（服务在跑时别做，会锁库）" % int(FRAG_WARN * 100)
-            if frag > FRAG_WARN else "")
+        worth = frag > FRAG_WARN and size > FRAG_SIZE_MIN   # 小库的空闲页不值得折腾 VACUUM（要停服务）
+        add("WARN" if worth else "PASS", "E 存储",
+            "库 %.1f MB，空闲页占比 %.1f%%（%d/%d 页）%s"
+            % (size / 1e6, 100 * frag, fl, pc, "" if worth else "（未到需要 VACUUM 的量级）"),
+            "碎片 %.0f%% 且库已 %.0f MB：等没有会话在写的时候 stop-manual → VACUUM → 启动，顺路做一次"
+            % (100 * frag, size / 1e6) if worth else "")
         for suf in ("-wal", "-journal", "-shm"):
             for p in glob.glob(str(DB) + suf + "*"):
                 add("WARN", "E 存储", "残留 %s（%.1f MB）" % (Path(p).name, os.path.getsize(p) / 1e6),

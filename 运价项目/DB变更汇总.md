@@ -362,3 +362,14 @@
 1. `ops/db_health.py` 图片判据错：按行累加 + 没剥 `@` 前缀 → 报"缺图 134"，实际唯一引用 4 张、**真缺 0**。判据已改成唯一引用 + 剥 `@` 词干匹配。
 2. `heartbeat_perf.py` 最初读 `state.json`，实测发现每轮 DONE 后被重置，当天产出会丢 → 改用 raw/llm_out/ocr_cache 的 mtime 聚类重建轮次 + 台账 `created_at` 算入库。
 3. `pending_review.py` 最初按 `edit_log` 非空算"人工改过"，把 266 条放行留痕当成修改、正确率成了空转 → 改成必须 `orig_payload` 与 `payload` 有字段差异（真改过 1 行）。
+
+## 2026-09-18（群负责人 owner 预填 + VACUUM 提示门槛纠正；附一次我用错端点）
+
+- 走错端点：先拿 `/api/master/save` 写 `chat_groups`，被白名单挡下（只收 ports/carriers/routes/senders/port_groups），
+  9 次全 500、**零脏写**；正确入口是 `POST /api/chat-group/save`。
+- 按"该群主要发送人且占比≥80%"预填 `chat_groups.owner` 8 个群，note 标"预填待人工确认"；
+  写入前后逐字段比对，确认只有 owner/note 变化（该函数会整行覆盖 default_pol/region/active/source，所以必须回传原值）。
+  3 个群无运价记录，留空不猜。
+- `db_health.py` 的 VACUUM 提示改为「空闲率>20% 且库>200MB」双条件：此前 4.5MB 的库每天报一个不需要处理的 WARN。
+- 记一笔归属：本次 `manual_check` 出现 6 项红，不是本会话造成的 —— 跑着的服务进程是 09-17 16:18 启的，
+  而 manual_server.py/manualdb.py 10:39、manual_check.py 10:47 刚被另一会话改过（新用例测的是没重启的旧进程）。
