@@ -7,7 +7,8 @@ from core.contracts import ok
 from core.growth_contracts import (GROWTH_APPROVAL_EVENT, GROWTH_APPROVAL_POINTS,
                                    GROWTH_CORRECTION_EVENT, GROWTH_CORRECTION_POINTS,
                                    GROWTH_DAILY_ACTIVITY_POINTS, GROWTH_DAILY_CAP,
-                                   GROWTH_GOVERNANCE_POINTS,
+                                   GROWTH_GOVERNANCE_POINTS, CENTER_GROWTH_EVENTS,
+                                   GROWTH_SYNC_TABLE,
                                    GROWTH_HISTORY_SIZE,
                                    GROWTH_LEGACY_SEARCH_EVENT, GROWTH_REVIEW_EVENT,
                                    GROWTH_RESET_EVENT,
@@ -15,6 +16,7 @@ from core.growth_contracts import (GROWTH_APPROVAL_EVENT, GROWTH_APPROVAL_POINTS
                                    GROWTH_SEARCH_POINTS)
 from services.account_growth import (GROWTH_XP_PER_CYCLE, award_feedback,
                                      map_legacy_xp, pagination, summary)
+from ops import center_auth
 
 BUSINESS_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
@@ -71,11 +73,17 @@ def _record(connection, user_id, event_type, subject_key, points, stamp, daily_c
     granted = int(points) if daily_cap is None else min(int(points), max(0, int(daily_cap) - earned))
     if granted <= 0:
         return {"awarded": False, "points": 0}
+    event_id = "xp_" + uuid.uuid4().hex
     inserted = connection.execute(
         "INSERT INTO account_experience_events(event_id,user_id,event_type,subject_key,points,rule_version,created_at) "
         "VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id,event_type,subject_key) DO NOTHING",
-        ("xp_" + uuid.uuid4().hex, user_id, event_type, subject_key,
+        (event_id, user_id, event_type, subject_key,
          granted, GROWTH_RULE_VERSION, stamp))
+    if inserted.rowcount == 1 and event_type in CENTER_GROWTH_EVENTS:
+        connection.execute(
+            f"INSERT INTO {GROWTH_SYNC_TABLE}(event_id,user_id,status,attempts,created_at) "
+            "VALUES(?,?,'pending',0,?) ON CONFLICT(event_id) DO NOTHING",
+            (event_id, user_id, stamp))
     return {"awarded": inserted.rowcount == 1,
             "points": granted if inserted.rowcount == 1 else 0}
 
@@ -99,6 +107,41 @@ def award_business_activity(connection, user_id, activity_event, subjects=(), no
     state = _read(connection, user_id, day, 1, 0)
     return award_feedback(state["summary"], awarded, state["today_xp"],
                           GROWTH_DAILY_CAP)
+
+
+def sync_center(connection, base_url, token, user_id, limit=100):
+    """Drain durable Navigator growth facts into the central account authority."""
+    if not base_url or not token or not user_id:
+        return 0
+    rows = connection.execute(
+        f"SELECT e.event_id,e.event_type,e.subject_key,e.points,e.rule_version,e.created_at "
+        f"FROM {GROWTH_SYNC_TABLE} o JOIN account_experience_events e ON e.event_id=o.event_id "
+        "WHERE o.user_id=? AND o.status='pending' ORDER BY e.created_at,e.event_id LIMIT ?",
+        (user_id, int(limit))).fetchall()
+    sent = 0
+    for row in rows:
+        try:
+            occurred = datetime.fromisoformat(str(row["created_at"]))
+            if occurred.tzinfo is None:
+                occurred = occurred.replace(tzinfo=BUSINESS_TIMEZONE)
+            center_auth.record_growth_event(base_url, token, {
+                "eventId": row["event_id"], "sourceProduct": "navigator",
+                "eventType": row["event_type"], "subjectKey": row["subject_key"],
+                "points": int(row["points"]), "ruleVersion": int(row["rule_version"]),
+                "occurredAt": occurred.isoformat(timespec="seconds"),
+            })
+            connection.execute(
+                f"UPDATE {GROWTH_SYNC_TABLE} SET status='sent',attempts=attempts+1,last_error=NULL,sent_at=? WHERE event_id=?",
+                (datetime.now(BUSINESS_TIMEZONE).isoformat(timespec="seconds"), row["event_id"]))
+            connection.commit()
+            sent += 1
+        except center_auth.CenterAuthError as error:
+            connection.execute(
+                f"UPDATE {GROWTH_SYNC_TABLE} SET attempts=attempts+1,last_error=? WHERE event_id=?",
+                (str(error)[:500], row["event_id"]))
+            connection.commit()
+            break
+    return sent
 
 
 def read(connect, session, query, today=_today):

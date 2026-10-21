@@ -283,8 +283,10 @@ DDL.update(ADMIN_DDL)
 DDL.update(PUBLISHER_DDL)
 from core.prospector_contracts import DDL as PROSPECTOR_DDL, PRIVATE_TABLES as PROSPECTOR_PRIVATE_TABLES
 DDL.update(PROSPECTOR_DDL)
-from core.growth_contracts import GROWTH_DDL, GROWTH_TABLE
+from core.growth_contracts import (GROWTH_DDL, GROWTH_TABLE, GROWTH_SYNC_DDL,
+                                   GROWTH_SYNC_TABLE, GROWTH_PRIVATE_TABLES)
 DDL[GROWTH_TABLE] = GROWTH_DDL
+DDL[GROWTH_SYNC_TABLE] = GROWTH_SYNC_DDL
 from core.activity_contracts import (ACTIVITY_DDL, ACTIVITY_INDEX_COLUMNS, ACTIVITY_TABLE,
                                      QUOTE_USAGE_DDL, QUOTE_USAGE_INDEX_COLUMNS, QUOTE_USAGE_TABLE)
 DDL[ACTIVITY_TABLE] = ACTIVITY_DDL
@@ -357,17 +359,17 @@ def database_probe(db_path: str | Path = DEFAULT_DB) -> Dict[str, Any]:
 
 
 def find_active_auth_session(conn: sqlite3.Connection, token_hash: str,
-                             now_epoch: int) -> Dict[str, Any] | None:
+                             now_epoch: int, require_password: bool = True) -> Dict[str, Any] | None:
     """Resolve a session by its bearer token hash.
 
     ``client_ip`` is retained as login audit metadata only. Binding browser
     sessions to an IP breaks on DHCP, VPN and reverse proxies, while the
     cookie is already high-entropy, HttpOnly and stored only as a hash.
     """
+    password_clause = "AND o.password_hash IS NOT NULL" if require_password else ""
     row = conn.execute(
         "SELECT o.user_id,o.name,o.display_name,o.role,s.created_at AS login_at,s.expires_at,COALESCE(sec.must_change_password,0) AS must_change_password FROM auth_sessions s JOIN operators o ON o.name=s.operator_name LEFT JOIN account_security sec ON sec.user_id=o.user_id "
-        "WHERE s.token_hash=? AND s.expires_at>? AND o.active=1 "
-        "AND o.password_hash IS NOT NULL",
+        f"WHERE s.token_hash=? AND s.expires_at>? AND o.active=1 {password_clause}",
         (token_hash, now_epoch)).fetchone()
     return dict(row) if row else None
 
@@ -5298,7 +5300,8 @@ def export_all(conn: sqlite3.Connection) -> Dict[str, Any]:
     """整库快照（备份 / 迁移用）。"""
     out: Dict[str, Any] = {"ok": True, "exported_at": now_cn()}
     # 会话令牌摘要属于短期认证状态，不应进入可携带的业务快照；导入后要求重新登录。
-    tables = [t for t in DDL if t != "auth_sessions" and t not in PROSPECTOR_PRIVATE_TABLES]
+    private_tables = PROSPECTOR_PRIVATE_TABLES | GROWTH_PRIVATE_TABLES
+    tables = [t for t in DDL if t != "auth_sessions" and t not in private_tables]
     for t in tables:
         out[t] = [dict(r) for r in conn.execute(f"SELECT * FROM {t}")]
     # 兼容旧快照消费者；新系统的唯一可写业务表仍是 freight_items。
@@ -5315,7 +5318,8 @@ def load_snapshot(conn: sqlite3.Connection, snap: Dict[str, Any]) -> str:
     """
     if not isinstance(snap, dict):
         raise ValueError("snapshot must be an object")
-    snapshot_tables = [t for t in DDL if t != "auth_sessions" and t not in PROSPECTOR_PRIVATE_TABLES]
+    private_tables = PROSPECTOR_PRIVATE_TABLES | GROWTH_PRIVATE_TABLES
+    snapshot_tables = [t for t in DDL if t != "auth_sessions" and t not in private_tables]
     missing = [t for t in snapshot_tables if t not in snap and t not in (PORT_ROUTES_TABLE, 'announcements',NOTIFICATION_TABLE,GROWTH_TABLE,ACTIVITY_TABLE,QUOTE_USAGE_TABLE,API_EVENT_TABLE,'sales_group_visits','item_feedback',*ADMIN_TABLES,*PUBLISHER_TABLES)]
     if missing:
         raise ValueError("snapshot missing tables: " + ", ".join(missing))
@@ -5324,7 +5328,7 @@ def load_snapshot(conn: sqlite3.Connection, snap: Dict[str, Any]) -> str:
         conn.execute("BEGIN IMMEDIATE")
         # 登录态不属于业务快照；导入后统一失效，避免旧 cookie 跨恢复继续可用。
         conn.execute("DELETE FROM auth_sessions")
-        for private_table in PROSPECTOR_PRIVATE_TABLES:
+        for private_table in private_tables:
             conn.execute("DELETE FROM " + private_table)
         # Relation restoration follows its parents; old snapshots rebuild from legacy route.
         conn.execute("DELETE FROM port_routes")

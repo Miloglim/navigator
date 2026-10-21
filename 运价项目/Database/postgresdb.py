@@ -95,7 +95,7 @@ class Connection:
         """Startup-only upgrade. Request connections must never acquire DDL locks."""
         from core.notice_contracts import NOTICE_DDL
         from core.notification_contracts import NOTIFICATION_DDL, NOTIFICATION_TABLE
-        from core.growth_contracts import GROWTH_DDL, GROWTH_TABLE
+        from core.growth_contracts import GROWTH_DDL, GROWTH_TABLE, GROWTH_SYNC_DDL, GROWTH_SYNC_TABLE
         from core.activity_contracts import (ACTIVITY_DDL, ACTIVITY_INDEX_COLUMNS, ACTIVITY_TABLE,
                                              QUOTE_USAGE_DDL, QUOTE_USAGE_INDEX_COLUMNS, QUOTE_USAGE_TABLE)
         from core.api_monitor_contracts import API_EVENT_DDL, API_EVENT_INDEX_COLUMNS, API_EVENT_TABLE
@@ -120,8 +120,10 @@ class Connection:
         for column in ('recipient_id', 'created_at', 'read_at', 'entity_id'):
             self._conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{NOTIFICATION_TABLE}_{column} ON {NOTIFICATION_TABLE}({column})")
         self._conn.execute(GROWTH_DDL)
+        self._conn.execute(GROWTH_SYNC_DDL)
         self._conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{GROWTH_TABLE}_user_id ON {GROWTH_TABLE}(user_id)")
         self._conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{GROWTH_TABLE}_created_at ON {GROWTH_TABLE}(created_at)")
+        self._conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{GROWTH_SYNC_TABLE}_status ON {GROWTH_SYNC_TABLE}(status,created_at)")
         self._conn.execute(ACTIVITY_DDL)
         for column in ACTIVITY_INDEX_COLUMNS:
             self._conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{ACTIVITY_TABLE}_{column} ON {ACTIVITY_TABLE}({column})")

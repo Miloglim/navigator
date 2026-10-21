@@ -12,6 +12,7 @@ from unittest.mock import patch
 import manualdb
 import manual_server as server
 from ops import notifications
+from ops import account_selfservice
 from ops.account_security import LoginLimiter
 from transport.notification_routes import build_notification_routes
 
@@ -103,6 +104,28 @@ def verify_selfservice(case, connect):
 
 
 class SelfServiceTests(unittest.TestCase):
+    def test_center_shared_profile_overrides_local_mirror_and_saves_center_first(self):
+        with tempfile.TemporaryDirectory() as directory:
+            connect=lambda:manualdb.connect(Path(directory)/'profile.db')
+            connection=connect()
+            try:
+                connection.execute("INSERT INTO operators(user_id,name,display_name,role,active,preferences_json,match_mode) VALUES('usr_profile','profile@example.invalid','local','sales',1,'{}','any')")
+                connection.commit()
+            finally:connection.close()
+            session={'user_id':'usr_profile','name':'profile@example.invalid','role':'sales','display_name':'profile@example.invalid'}
+            shared={'userId':'center-profile','displayName':'Zayne','avatarId':'av-04','growth':{'level':28}}
+            result=account_selfservice.profile(connect,session,'127.0.0.1',shared)['data']
+            self.assertEqual(result['display_name'],'Zayne')
+            self.assertEqual(result['preferences']['avatar_id'],'av-04')
+            self.assertEqual(result['shared_growth'],{'level':28})
+            calls=[]
+            body={'display_name':'Zayne Updated','preferences':{'routes':[],'groups':[],'ctypes':[],'start_tab':'rates','avatar_id':'av-04'}}
+            saved=account_selfservice.save_profile(connect,session,'127.0.0.1',body,
+                lambda display,avatar:(calls.append((display,avatar)) or {**shared,'displayName':display,'avatarId':avatar}))['data']
+            self.assertEqual(calls,[('Zayne Updated','av-04')])
+            self.assertEqual(saved['display_name'],'Zayne Updated')
+            self.assertEqual(saved['preferences']['avatar_id'],'av-04')
+
     def test_sqlite_http_account_lifecycle(self):
         with tempfile.TemporaryDirectory() as directory:
             db=Path(directory)/'fixture.db';verify_selfservice(self,lambda:manualdb.connect(db))

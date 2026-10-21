@@ -100,7 +100,7 @@ DEFAULT_PREFERENCES = {"routes": [], "groups": [], "ctypes": [], "start_tab": "r
                        ACCOUNT_CARRIER_REALTIME_PREF: False}
 
 
-def _profile(connection, session, client_ip):
+def _profile(connection, session, client_ip, shared_profile=None):
     import json
     row = connection.execute("SELECT user_id,name,display_name,role,created_at,password_changed_at,preferences_json FROM operators WHERE name=? AND active=1", (session["name"],)).fetchone()
     if not row:
@@ -118,6 +118,14 @@ def _profile(connection, session, client_ip):
     available = {"routes": routes, "groups": groups}
     # Retired or no-longer-visible choices never silently widen a saved default to all.
     unavailable = {k: [v for v in preferences[k] if v not in available[k]] for k in available}
+    if isinstance(shared_profile, dict):
+        shared_display = str(shared_profile.get("displayName") or "").strip()
+        if shared_display:
+            account["display_name"] = shared_display
+        shared_avatar = shared_profile.get("avatarId")
+        preferences[ACCOUNT_AVATAR_PREF] = None if shared_avatar == "default" else (
+            shared_avatar if shared_avatar in ACCOUNT_AVATAR_ALL_IDS else preferences[ACCOUNT_AVATAR_PREF])
+        account["shared_growth"] = shared_profile.get("growth")
     account.update({"display_name": account["display_name"] or account["name"], "preferences": preferences,
         "options": {**available, "ctypes": [], "avatar_ids": list(ACCOUNT_AVATAR_ALL_IDS),
                     "avatar_groups": account_avatar_groups(),
@@ -126,15 +134,15 @@ def _profile(connection, session, client_ip):
     return account
 
 
-def profile(connect, session, client_ip):
+def profile(connect, session, client_ip, shared_profile=None):
     connection = connect()
     try:
-        return ok(_profile(connection, session, client_ip))
+        return ok(_profile(connection, session, client_ip, shared_profile))
     finally:
         connection.close()
 
 
-def save_profile(connect, session, client_ip, body):
+def save_profile(connect, session, client_ip, body, save_shared=None):
     import json
     from services.account_forms import profile_update
     connection = connect()
@@ -142,6 +150,9 @@ def save_profile(connect, session, client_ip, body):
         current = _profile(connection, session, client_ip)
         display, preferences = profile_update(body, current["options"]["routes"], current["options"]["groups"],
                                                current["preferences"][ACCOUNT_AVATAR_PREF], current["preferences"])
+        shared_profile = None
+        if save_shared:
+            shared_profile = save_shared(display, preferences[ACCOUNT_AVATAR_PREF] or "default")
         result = connection.execute("UPDATE operators SET display_name=?,preferences_json=? WHERE name=? AND active=1", (display, json.dumps(preferences, ensure_ascii=False), session["name"]))
         if result.rowcount != 1:
             raise PermissionError("账号状态已变化，请重新登录")
@@ -151,6 +162,6 @@ def save_profile(connect, session, client_ip, body):
             record_event(connection,session['user_id'],'profile_updated',session['name'],session['user_id'],
                          {'display_name':{'before':current['display_name'],'after':display}},now_cn())
         connection.commit()
-        return ok(_profile(connection, session, client_ip))
+        return ok(_profile(connection, session, client_ip, shared_profile))
     finally:
         connection.close()

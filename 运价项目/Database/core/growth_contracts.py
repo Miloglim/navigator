@@ -4,6 +4,8 @@ from typing import TypedDict
 GROWTH_ROUTE = "/api/account/growth"
 GROWTH_SEARCH_ROUTE = "/api/account/growth/search"
 GROWTH_TABLE = "account_experience_events"
+GROWTH_SYNC_TABLE = "account_growth_sync_outbox"
+GROWTH_PRIVATE_TABLES = frozenset({GROWTH_SYNC_TABLE})
 GROWTH_LEGACY_SEARCH_EVENT = "daily_quote_search"
 GROWTH_SEARCH_EVENT = "daily_effective_search"
 GROWTH_REVIEW_EVENT = "daily_review_activity"
@@ -25,6 +27,11 @@ GROWTH_LEGACY_XP_PER_LEVEL = 10
 GROWTH_LEVELS_PER_CYCLE = 50
 GROWTH_LEVEL_BASE_XP = 12
 GROWTH_LEVEL_MAX_XP = 30
+CENTER_GROWTH_EVENTS = frozenset({
+    GROWTH_LEGACY_SEARCH_EVENT, GROWTH_SEARCH_EVENT, GROWTH_REVIEW_EVENT,
+    GROWTH_GOVERNANCE_EVENT, GROWTH_GOVERNANCE_ITEM_EVENT,
+    GROWTH_APPROVAL_EVENT, GROWTH_CORRECTION_EVENT,
+})
 
 
 class GrowthSummary(TypedDict):
@@ -59,3 +66,9 @@ GROWTH_DDL = """CREATE TABLE IF NOT EXISTS account_experience_events (
     subject_key TEXT NOT NULL, points INTEGER NOT NULL, rule_version INTEGER NOT NULL,
     created_at TEXT NOT NULL,
     UNIQUE(user_id,event_type,subject_key), CHECK(points > 0))"""
+
+GROWTH_SYNC_DDL = """CREATE TABLE IF NOT EXISTS account_growth_sync_outbox (
+    event_id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','sent')),
+    attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT,
+    created_at TEXT NOT NULL, sent_at TEXT)"""

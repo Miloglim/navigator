@@ -56,11 +56,13 @@ import ssl
 import subprocess
 import sys
 import time
+from datetime import datetime
 from threading import RLock, BoundedSemaphore
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable, Dict
 from urllib.parse import parse_qs, urlparse
+from zoneinfo import ZoneInfo
 
 try:  # Windows 控制台默认 GBK，中文输出会乱码
     sys.stdout.reconfigure(encoding="utf-8")
@@ -106,7 +108,9 @@ from core.growth_contracts import (GROWTH_APPROVAL_EVENT, GROWTH_APPROVAL_POINTS
                                    GROWTH_CORRECTION_EVENT, GROWTH_CORRECTION_POINTS,
                                    GROWTH_GOVERNANCE_EVENT, GROWTH_GOVERNANCE_ITEM_EVENT,
                                    GROWTH_GOVERNANCE_POINTS, GROWTH_REVIEW_EVENT,
-                                   GROWTH_ROUTE, GROWTH_SEARCH_ROUTE)
+                                   GROWTH_ROUTE, GROWTH_SEARCH_ROUTE, GROWTH_DAILY_CAP,
+                                   GROWTH_RULE_VERSION, GROWTH_HISTORY_SIZE, GROWTH_HISTORY_MAX_SIZE)
+from services.account_growth import summary as growth_summary
 from ops import admin_accounts
 from transport.admin_routes import build_admin_routes
 from core.admin_contracts import PASSWORD_CHANGE_REQUIRED
@@ -172,12 +176,66 @@ def award_growth_safe(connection, body, activity_event, subjects=(), activity_da
     if not user_id or user_id == "agent":
         return None
     try:
-        return account_growth.award_business_activity(
+        growth = account_growth.award_business_activity(
             connection, user_id, activity_event, subjects,
             activity_daily_cap=activity_daily_cap)
+        center_token = str(body.get("_center_token") or "")
+        if growth and CFG.get("center_auth_url") and center_token:
+            try:
+                account_growth.sync_center(connection, CFG["center_auth_url"], center_token, user_id)
+            except Exception as sync_error:  # noqa: BLE001 - local outbox remains pending
+                log("WARN", f"中心经验同步待重试 user={user_id}: {sync_error}")
+        return growth
     except Exception as error:  # noqa: BLE001 - business result already committed
         log("ERROR", f"经验记账失败 user={user_id} event={activity_event}: {error}")
         return None
+
+
+def center_growth_summary(growth):
+    if not isinstance(growth, dict):
+        return None
+    return {
+        "total_xp": int(growth.get("totalXp") or 0), "level": int(growth.get("level") or 1),
+        "cycle": int(growth.get("cycle") or 1), "level_name": str(growth.get("levelName") or ""),
+        "level_start": int(growth.get("levelStart") or 0), "next_threshold": int(growth.get("nextThreshold") or 0),
+        "level_cost": int(growth.get("levelCost") or 0), "level_progress": int(growth.get("levelProgress") or 0),
+        "cycle_start": int(growth.get("cycleStart") or 0), "cycle_end": int(growth.get("cycleEnd") or 0),
+        "cycle_xp": int(growth.get("cycleXp") or 0), "today_awarded": bool(growth.get("todayAwarded")),
+    }
+
+
+def center_growth_payload(profile, query):
+    try:
+        limit = int(query.get("limit", GROWTH_HISTORY_SIZE))
+        offset = int(query.get("offset", 0))
+    except (TypeError, ValueError) as error:
+        raise ValueError("invalid growth pagination") from error
+    if not 1 <= limit <= GROWTH_HISTORY_MAX_SIZE or offset < 0:
+        raise ValueError("invalid growth pagination")
+    growth = profile.get("growth") if isinstance(profile, dict) else None
+    return ok({"summary": center_growth_summary(growth), "history": [], "total": 0,
+        "today_xp": int(growth.get("todayXp") or 0) if isinstance(growth, dict) else 0,
+        "limit": limit, "offset": offset, "rule": {
+            "version": GROWTH_RULE_VERSION, "daily_search_points": 18,
+            "daily_activity_points": 18, "approval_points": GROWTH_APPROVAL_POINTS,
+            "correction_points": GROWTH_CORRECTION_POINTS, "governance_points": GROWTH_GOVERNANCE_POINTS,
+            "daily_cap": GROWTH_DAILY_CAP, "cycle_xp": 1026}})
+
+
+def center_growth_award(receipt):
+    if not isinstance(receipt, dict) or not receipt.get("awarded"):
+        return None
+    summary = center_growth_summary(receipt.get("summary"))
+    points = int(receipt.get("awardedPoints") or 0)
+    if not summary or points <= 0:
+        return None
+    previous = growth_summary(max(0, summary["total_xp"] - points), False)
+    return {"awarded": True, "awarded_points": points,
+        "today_xp": int(receipt.get("summary", {}).get("todayXp") or 0),
+        "daily_cap": GROWTH_DAILY_CAP,
+        "level_up": (summary["cycle"], summary["level"]) != (previous["cycle"], previous["level"]),
+        "cycle_up": summary["cycle"] != previous["cycle"],
+        "previous_level": previous["level"], "previous_cycle": previous["cycle"], "summary": summary}
 
 
 def record_sales_activity_safe(connection, query, endpoint, result):
@@ -268,6 +326,10 @@ def auth_login(body: Dict[str, Any], client_ip: str) -> tuple[Dict[str, Any], st
             c.commit()
             with CENTER_SESSION_LOCK:
                 CENTER_SESSION_TOKENS[sid] = center["token"]
+            try:
+                account_growth.sync_center(c, CFG["center_auth_url"], center["token"], row["user_id"])
+            except Exception as error:  # noqa: BLE001 - login remains valid and outbox stays pending
+                log("WARN", f"登录后中心经验同步待重试 user={row['user_id']}: {error}")
             local = dict(row)
             local["role"] = role
             local["display_name"] = center["identity"].get("displayName") or row["display_name"] or row["name"]
@@ -2080,13 +2142,40 @@ class Handler(BaseHTTPRequestHandler):
         self._send_file(file_path, ctype, headers, head_only=head_only)
         return True
 
-    def _session(self) -> Dict[str, Any] | None:
-        sid = ""
+    def _session_id(self) -> str:
         for part in self.headers.get("Cookie", "").split(";"):
             k, _, v = part.strip().partition("=")
             if k == SESSION_COOKIE:
-                sid = v
-                break
+                return v
+        return ""
+
+    def _center_token(self) -> str:
+        sid = self._session_id()
+        if not sid:
+            return ""
+        with CENTER_SESSION_LOCK:
+            return CENTER_SESSION_TOKENS.get(sid, "")
+
+    def _center_profile(self) -> Dict[str, Any] | None:
+        if not CFG.get("center_auth_url"):
+            return None
+        token = self._center_token()
+        return center_auth.account_profile(CFG["center_auth_url"], token) if token else None
+
+    def _sync_growth_center(self, session: Dict[str, Any]) -> None:
+        token = self._center_token()
+        if not CFG.get("center_auth_url") or not token:
+            return
+        c = conn()
+        try:
+            account_growth.sync_center(c, CFG["center_auth_url"], token, session["user_id"])
+        except Exception as error:  # noqa: BLE001 - pending local events remain durable
+            log("WARN", f"中心经验同步待重试 user={session.get('user_id', '')}: {error}")
+        finally:
+            c.close()
+
+    def _session(self) -> Dict[str, Any] | None:
+        sid = self._session_id()
         if not sid:
             return None
         c = conn()
@@ -2094,7 +2183,8 @@ class Handler(BaseHTTPRequestHandler):
             if not sid.isascii():
                 return None
             token_hash = hashlib.sha256(sid.encode("ascii")).hexdigest()
-            row = manualdb.find_active_auth_session(c, token_hash, int(time.time()))
+            row = manualdb.find_active_auth_session(
+                c, token_hash, int(time.time()), require_password=not bool(CFG.get('center_auth_url')))
             if not row:
                 c.execute("DELETE FROM auth_sessions WHERE token_hash=? OR expires_at<=?", (token_hash, int(time.time())))
                 c.commit()
@@ -2107,7 +2197,8 @@ class Handler(BaseHTTPRequestHandler):
                     c.commit()
                     return None
                 try:
-                    center_auth.validate(CFG["center_auth_url"], center_token)
+                    access = center_auth.validate(CFG["center_auth_url"], center_token)
+                    row["display_name"] = access["identity"].get("displayName") or row["display_name"] or row["name"]
                 except center_auth.CenterAuthError:
                     with CENTER_SESSION_LOCK:
                         CENTER_SESSION_TOKENS.pop(sid, None)
@@ -2288,8 +2379,14 @@ class Handler(BaseHTTPRequestHandler):
                 finally:
                     c.close()
             if p == ACCOUNT_PROFILE_ROUTE:
-                return self._json(200, PROFILE_GET[p](session, self.client_address[0]))
+                self._sync_growth_center(session)
+                shared = self._center_profile()
+                return self._json(200, account_selfservice.profile(conn, session, self.client_address[0], shared))
             if p == GROWTH_ROUTE:
+                if CFG.get("center_auth_url"):
+                    self._sync_growth_center(session)
+                    shared = self._center_profile()
+                    return self._json(200, center_growth_payload(shared or {}, q))
                 return self._json(200, account_growth.read(conn, session, {k: v for k, v in q.items() if not k.startswith('_')}))
             if p.startswith("/images/"):
                 return self._send_image(p, session)
@@ -2385,7 +2482,13 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(401, fail("请先登录", "unauthenticated"))
                 if session.get('must_change_password'):
                     return self._json(403,fail('请先修改登录密码',PASSWORD_CHANGE_REQUIRED))
-                return self._json(200, PROFILE_POST[p](session, self.client_address[0], payload))
+                save_shared = None
+                if CFG.get("center_auth_url"):
+                    save_shared = lambda display_name, avatar_id: center_auth.update_account_profile(
+                        CFG["center_auth_url"], self._center_token(), display_name,
+                        None if avatar_id == 'default' else avatar_id)
+                return self._json(200, account_selfservice.save_profile(
+                    conn, session, self.client_address[0], payload, save_shared))
             if p == AUTH_PASSWORD_ROUTE:
                 session = self._session()
                 if not session:
@@ -2446,6 +2549,22 @@ class Handler(BaseHTTPRequestHandler):
             if sess and sess.get('must_change_password'):
                 return self._json(403,fail('请先修改登录密码',PASSWORD_CHANGE_REQUIRED))
             if p == GROWTH_SEARCH_ROUTE:
+                if CFG.get("center_auth_url"):
+                    if payload:
+                        raise ValueError("growth award accepts no client fields")
+                    occurred_at = datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(timespec="seconds")
+                    day = occurred_at[:10]
+                    receipt = center_auth.record_growth_event(CFG["center_auth_url"], self._center_token(), {
+                        "eventId": f"daily-search:{sess['user_id']}:{day}",
+                        "sourceProduct": "navigator", "eventType": "daily_effective_search",
+                        "subjectKey": day, "points": 18, "ruleVersion": GROWTH_RULE_VERSION,
+                        "occurredAt": occurred_at})
+                    shared = self._center_profile()
+                    data = center_growth_payload(shared or {}, {"limit": GROWTH_HISTORY_SIZE, "offset": 0})["data"]
+                    data["awarded"] = bool(receipt.get("awarded"))
+                    data["awarded_points"] = int(receipt.get("awardedPoints") or 0)
+                    data["growth_award"] = center_growth_award(receipt)
+                    return self._json(200, ok(data))
                 return self._json(200, account_growth.award_search(conn, sess, payload))
             if p in ('/api/pending/approve_all','/api/pending/sync') and payload.get('ownership','mine') not in ('mine','all'):
                 raise ValueError('ownership must be mine or all')
@@ -2458,6 +2577,8 @@ class Handler(BaseHTTPRequestHandler):
             payload["_actor_id"] = sess["user_id"] if sess else "agent"
             payload['_role'] = sess['role'] if sess else 'agent'
             payload['_actor_display'] = (sess.get('display_name') or sess['name']) if sess else 'agent'
+            if sess and CFG.get("center_auth_url"):
+                payload['_center_token'] = self._center_token()
             if p.startswith("/api/admin/company-token-refresh") or p == "/api/admin/company-credentials":
                 payload['_client_ip'] = self.client_address[0]
             if p in (ACTIVITY_PAGE_OPEN_ROUTE, ACTIVITY_QUOTE_USAGE_ROUTE):

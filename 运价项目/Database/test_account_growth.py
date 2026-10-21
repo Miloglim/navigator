@@ -14,7 +14,8 @@ import manual_server as server
 from ops import account_growth
 from core.growth_contracts import (GROWTH_APPROVAL_EVENT, GROWTH_APPROVAL_POINTS,
                                    GROWTH_CORRECTION_EVENT, GROWTH_CORRECTION_POINTS,
-                                   GROWTH_REVIEW_EVENT,GROWTH_RESET_EVENT)
+                                   GROWTH_REVIEW_EVENT,GROWTH_RESET_EVENT,
+                                   GROWTH_SYNC_TABLE)
 from services.account_growth import GROWTH_XP_PER_CYCLE, map_legacy_xp, summary
 from transport.access_rules import authorize
 
@@ -23,6 +24,7 @@ def verify_growth(case, connect):
     connection = connect()
     try:
         connection.execute('DELETE FROM account_experience_events')
+        connection.execute('DELETE FROM account_growth_sync_outbox')
         connection.execute('DELETE FROM auth_sessions')
         connection.execute('DELETE FROM operators')
         connection.commit()
@@ -142,6 +144,47 @@ class GrowthTests(unittest.TestCase):
                 self.assertEqual(second['daily_cap'], 30)
                 self.assertEqual(connection.execute(
                     'SELECT SUM(points) FROM account_experience_events WHERE user_id=?', ('usr_growth',)).fetchone()[0], 32)
+            finally:
+                connection.close()
+
+    def test_center_growth_outbox_is_durable_and_marks_sent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            connection = manualdb.connect(Path(directory) / 'growth.db')
+            try:
+                connection.execute("INSERT INTO operators(user_id,name,role,active) VALUES('usr_sync','sync','sales',1)")
+                account_growth.award_business_activity(
+                    connection, 'usr_sync', GROWTH_REVIEW_EVENT,
+                    [(GROWTH_APPROVAL_EVENT, 'pending:sync', GROWTH_APPROVAL_POINTS)],
+                    '2026-09-30T09:00:00+08:00')
+                pending = connection.execute(
+                    f"SELECT event_id,status,attempts FROM {GROWTH_SYNC_TABLE}").fetchall()
+                self.assertEqual(len(pending), 2)
+                self.assertTrue(all(row['status'] == 'pending' and row['attempts'] == 0 for row in pending))
+                with patch.object(account_growth.center_auth, 'record_growth_event', return_value={'awarded': True}):
+                    self.assertEqual(account_growth.sync_center(connection, 'http://center', 'token', 'usr_sync'), 2)
+                sent = connection.execute(
+                    f"SELECT status,attempts,sent_at FROM {GROWTH_SYNC_TABLE} ORDER BY event_id").fetchall()
+                self.assertTrue(all(row['status'] == 'sent' and row['attempts'] == 1 and row['sent_at'] for row in sent))
+            finally:
+                connection.close()
+
+    def test_center_growth_outbox_keeps_event_pending_on_center_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            connection = manualdb.connect(Path(directory) / 'growth.db')
+            try:
+                connection.execute("INSERT INTO operators(user_id,name,role,active) VALUES('usr_sync_fail','sync','sales',1)")
+                account_growth.award_business_activity(
+                    connection, 'usr_sync_fail', GROWTH_REVIEW_EVENT,
+                    [(GROWTH_APPROVAL_EVENT, 'pending:fail', GROWTH_APPROVAL_POINTS)],
+                    '2026-09-30T09:00:00+08:00')
+                with patch.object(account_growth.center_auth, 'record_growth_event',
+                                  side_effect=account_growth.center_auth.CenterAuthError('offline')):
+                    self.assertEqual(account_growth.sync_center(connection, 'http://center', 'token', 'usr_sync_fail'), 0)
+                pending = connection.execute(
+                    f"SELECT status,attempts,last_error FROM {GROWTH_SYNC_TABLE} ORDER BY event_id").fetchall()
+                self.assertTrue(all(row['status'] == 'pending' for row in pending))
+                self.assertEqual(sorted(row['attempts'] for row in pending), [0, 1])
+                self.assertEqual([row['last_error'] for row in pending if row['attempts'] == 1], ['offline'])
             finally:
                 connection.close()
 

@@ -4,6 +4,118 @@
 
 ---
 
+## 2026-10-21（新增中心成长同步 outbox；未改运价业务数据）
+
+**缘由**：中心成为共享昵称、头像、经验和成长投影唯一真源。Navigator 业务经验仍需先作为本地不可变事件保存，再可靠补传中心，避免中心短暂离线时丢事件。
+
+**改动**：新增运行时表 `account_growth_sync_outbox(event_id,user_id,status,attempts,last_error,created_at,sent_at)`，只记录可同步事件状态，不复制经验正文。业务事件与 outbox 同事务写入；登录、账号页读取和新经验产生时补传中心，成功标记 sent。表和待同步状态不进入业务快照。
+
+**验证**：账号、成长、中心客户端 15 项测试通过；跨栈隔离实例验证首次有效查询 +18、重复请求不增加、中心最终 1 条事件；正式本地与阿里云账号均核对为 `Zayne / av-04 / 6612 XP / level 28`。运价、待审、报价和客户业务数据未改。
+
+**回退**：停用新客户端代码并恢复发布前备份；确认无待同步事件后再删除 outbox 表。不能只清 outbox 而保留未上报业务经验。
+
+## 2026-09-21（采集配置：新增「地西+地黑价格更新」群 + 杜佳仪系三群规范改为「共享基础+群内差异」；未动台账数据）
+
+**缘由**：你说明 土耳其 / 欧洲 / 地西+地黑 三个群航管同为杜佳仪等 2 人，业务规范可套用；选择"共享基础+群内差异"的组织方式。"地黑"经确认为群名 **地西+地黑价格更新**（此前未配置）。
+
+**改动**：
+1. **新增群** `dixi_hei_price`（地西+地黑价格更新，cid `cidU3K4GSO+bHPhFklCHMnZQw==`，shard A，兜底 全国基本港·待航管确认，航线 地西/黑海）进 `chat_sources.json`；建 `references/群聊规范/地西+地黑价格更新/规范.md`（只写差异，大量待补）。群数 11→12。
+2. **新建共享基础** `references/群聊规范/_杜佳仪系共享/规范.md`：杜佳仪系三群共用的报价格式、运价/舱位判别(#27/#28)、通用坑（币种/多POL/附加费）。
+3. turkey/europe 规范.md 顶部加"继承共享"抬头、删掉与共享重复的判别/通用坑节，只留群内差异（专属缩写表、兜底港、别名登记日志）。
+4. `chat_sources.json` 三群加 `spec_base` 字段指向共享目录。
+5. `spec_index.py` 支持 `spec_base` 合并：群档案 = 共享基础 + 本群差异（headers/abbrev/todo/anchors 并入），`brief()` 增 `spec_base_path`；`pipeline.py` LLM 提示改为"有 spec_base_path 先读共享再读本群"。
+
+**验证**：spec_index/pipeline/record_builder py_compile 通过；spec_index 冒烟 12 群全 route=config 无异常，共享 4 小节并入各群（europe 小节 5→9、dixi_hei 3→7）；resolve_basis 跨基础锚点验证：europe 命中共享"运价/舱位判别"、dixi_hei 命中本群缩写表、不存在小节正确报错。源↔运行字节比对复验 0 差异（新群/新基础文件手工补拷，因 sync 只覆盖两边都有的）。
+
+**遗留**：`dixi_hei_price` 归 shard A ⇒ A 片从 6 群变 7 群，定时任务重启用前留意 A/B 均衡（当前 cron 全禁用，无影响）；第 2 位航管姓名、地西/地黑 兜底港与专属缩写表待实测补。台账数据本次未改动。
+
+**回退**：`git checkout` chat_sources.json / spec_index.py / pipeline.py / 三群规范.md → 手工删 `_杜佳仪系共享/`、`地西+地黑价格更新/` 两目录（源+运行）→ `skill_diff.py sync`。
+
+---
+
+## 2026-09-21（全局规范新增「带价现舱 / 舱价同源」判别 + 对齐代码；未动台账数据）
+
+**缘由**：你给出运价/舱位的业务分类口径——① 带价现舱属于现舱（价格是舱位信息里的字段）；② 舱价同源是运价与舱位分属不同区块、不混排。要求写进全局业务规范，并给 turkey 群加判别节。
+
+**改动**：
+1. `references/extraction-rules.md` 新增 **规则 27**（带价现舱→1 条 space、价格进 `价格USD`、不拆运价）与 **规则 28**（舱价同源→运价块进 `freight_rates`、舱位块进 `space_records`，按区块分表），并写明与规则 7 的衔接、27/28 的分界。
+2. `scripts/llm_output_contract.md` 把旧的"带价现舱拆两条：金额进 rate、箱量进 space"注释改为对齐 #27/#28（旧写法与新口径冲突）。
+3. `record_builder.py` `t_space_table_cache` 改为**每行只产 1 条 space**（价格进 `价格USD`），去掉原来额外产的那条 rate。直连验证：现舱表 2 行→2 条 space（原为 2rate+2space）。
+4. `references/群聊规范/土耳其价格更新/规范.md` 新增「运价/舱位判别（本群）」节：纯运价矩阵/价卡→rates；带价现舱（价嵌在舱位行/表内）→space 一条；舱价同源→分块各归各表。
+
+**验证**：record_builder py_compile 通过；现舱表模板输出确认 space-only；源↔运行字节比对复验 0 差异（同步 4 文件）。
+
+**遗留影响（需你定夺）**：今天 turkey 那轮我已提交的现舱表图（msgHsVxQ）是按**旧口径**产了 2 rate+2 space，按新 #27 应是 2 space。那 2 条 rate 现在挂在待审——要不要我按 `消息ID` 删掉那 2 条多余 rate？（不删也行，人工在待审页驳回即可。）台账数据本次未改动。
+
+**回退**：`git checkout` extraction-rules.md / llm_output_contract.md / record_builder.py / turkey 规范.md → `skill_diff.py sync`。
+
+---
+
+## 2026-09-20（心跳提效：新增三类规整图零 LLM 生成器 + 提交前防呆闸门；未动台账数据）
+
+**缘由**：turkey_price 手动单群拉取暴露两个问题——① 15 条消息全靠 LLM 逐条判（模板零命中），131 条记录转写耗时；② 我这次踩了"判定文件写错目录→空提交推水位""柜型写 40HQ 非规范 40HQ/HC"两个坑。你选了"识图模板化 + 提交前防呆自检"两项优化。
+
+**改动（全在 Skill 源目录，未碰 freight_manual.db / 主数据）**：
+
+1. `record_builder.py` 新增三个规整图生成器 + `CACHE_TPL` 按 `cache["type"]` 分发注册表：
+   - `t_space_table_cache`（type `space_table`，现舱表 ETD/POL/POD/VESSEL/VOL/RATE/FT/退关费）→ 每行拆 rate+space；
+   - `t_rate_matrix_cache`（type `rate_matrix`，多 POL×多 POD 矩阵如 CUL）→ 逐格展开、空值格跳过、tag 进备注；
+   - `t_price_card_cache`（type `price_card`，POD×柜型价卡如 MSK 地中海）→ 每行一条，无 POL 则起运港留空交人工。
+   配套 `_num/_ctype/_vol_split` 解析（`40HC`→`40HQ/HC`、`1X40HC`→柜型+箱量）。图片分发从写死 title 判断改为 type 注册表，旧 HPL/add on 兜底保留。
+2. `pipeline.py` `step_build` 加防呆闸门：本轮有新消息却零候选、且 llm_out 目录为空 → **ABORT（exit 2）**并打印实际 glob 路径 + sfx，不再空提交推水位（判 noise 也算文件，故"目录空"＝真没判）。
+3. `check_llm_out.py` 加防呆：llm_out 目录空/不存在时 `n_obj==0` → 报 **error**（不再"全部干净"假通过），提示核对 `--shard/--only` 与生成时一致。
+4. `llm_output_contract.md` 补「结构化表格图 → 零 LLM 生成器」章节，写明三类规范 cache schema + 新增类型只需挂 `CACHE_TPL` 一行。
+
+**验证**：六脚本 py_compile 通过；直连测试三生成器——现舱表 2 行→4 条(2rate+2space)、矩阵含空格→正确跳过、价卡→POL 留空；空目录自查闸门 `--only qingdao_latam` 返回 error 退出码 1（原会假通过）；源↔运行字节比对复验 0 差异。
+
+**回退**：`git checkout` record_builder.py / pipeline.py / check_llm_out.py / llm_output_contract.md → `skill_diff.py sync`。台账数据本次零改动。
+
+---
+
+## 2026-09-20（采集数据重置 + Skill 新增 `--only` 单群手动模式）
+
+**缘由**：你要求「重置水位到今天 09:00、关掉所有定时任务、清空已采运价条目，接下来以单群为单位手动逐个拉群」，为手动重采做干净起点。分片 A/B + 四定时任务架构不动，只是**暂停**。
+
+**台账库改动（三张采集表清空，主数据零改动）**：`DELETE FROM pending_records / freight_rates / space_records` 并清其 `sqlite_sequence`（新条目 ID 从 1 重计）→ 计数 2025 / 714 / 39 全部归 **0**。港口 1212 / 船司 53 / 别名 94 等主数据、以及 `rule_candidates`/`field_defaults`/`edit_log` 学习数据一律**未动**。台账服务在跑但 `foreign_keys=0`、三表无交叉引用、`pending_shadow` 空、WAL 已落盘，直连 SQLite 删表安全；经 `/api/pending?status=awaiting` 复核读到 0，非缓存假象。
+
+**水位线**：全 11 群回退到 `2026-09-20 09:00:00`。注意 `watermark.py set` 是单调的（只前进），回退**必须直接重写 `heartbeat-data/watermark.json`** 为 `{slug:"YYYY-MM-DD HH:MM:SS"}`，不能走 set。
+
+**定时任务**：全部 7 个 disable（4 心跳 + 待审辅助 + 效率审查 + 维护体检）。稳定后把 4 心跳按原 `--shard A/B` 重新 enable 即回自动模式。
+
+**Skill 代码（纯增量，不改分片/cron 路径）**：`--only <slug>` 复用已同步的 `sfx()` 机制——设 `FRT_ONLY` 后中间目录变 `run/msgs/draft/llm_out_<D>_<slug>`，群与群完全隔离；`step_pull` 把 pull_target 锁到该群、非法 slug 直接 ABORT；`runpy()` 与自查提示透传 `--only`；`record_builder` 经子进程继承 env 自动隔离，`check_llm_out` 加读 `FRT_ONLY`。手动跑法：`pipeline.py next --only turkey_price` → 存 raw → `advance --only turkey_price`（照抄输出）到 DONE，再换下一群。
+
+**验证**：6 脚本 py_compile 通过；`--only turkey_price` next 只吐 1 条 dws（时间戳正是 09:00）、不带则 11 条、非法 slug ABORT 列出可用群；源↔运行字节比对复验 0 差异；运行副本 `next --only qingdao_latam` 冒烟通过。
+
+**踩坑修正（销售端仍显示旧条目）**：直连 SQLite 清库后，运行中的 `manual_server` 销售端 `/api/rates_grouped` 仍返回旧 338 条——它走进程内 `_GROUPED_CACHE`，失效键 `PRAGMA data_version` 因"每请求新开连接"而不随外部写变化，缓存永不失效（实查口 `/api/rates`、`stats` 已是 0，故判定为缓存陈旧非没清干净）。用自带脚本 `stop-manual.bat` → `manual_server.py --daemon` 重启（同端口同库）后归零。**教训：凡绕开服务直接改库，务必连带重启 8795。**
+
+**回退**：库用 `Database/backup/freight_manual.pre-reset-20260920-162318.db`（7.8MB）整库 `--import` 回灌；水位用 `watermark.json.pre-reset-20260920-162318.bak` 覆盖回；定时任务逐个 enable 回来；`--only` 是新增可选参数，不用即无影响（回退只需 `git checkout` paths/pipeline/check_llm_out）。
+
+---
+
+## 2026-09-20（采集配置 + Skill 代码：心跳按群分片 A/B，2 个定时任务拆成 4 个；不动台账库数据）
+
+**缘由**：你要求「按群聊单日消息量与频率把高低频两个心跳任务各拆成两个大组，缩短单次识别时间」。落地＝把 11 个群按体量均衡切成 A/B 两片，各片中间目录与水位互不覆盖，ocr_cache 仍全局共享。
+
+**改了什么**（只动 Skill 源目录 + 定时任务，未碰 freight_manual.db / 主数据业务表）：
+
+1. `scripts/paths.py`：新增 `SHARD`（读环境变量 `FRT_SHARD`）与 `sfx()`（返回 `_A`/`_B`/空）；`chat_groups()` 设了分片时只返回该片群。
+2. `scripts/pipeline.py`：`--shard` 在 `import paths` 前预扫描写入 env（子进程继承）；`run_/msgs_/draft_/llm_out_<D>` 目录追加分片后缀；`ocr_cache` 保持全局；`runpy()` 与自查提示自动带 `--shard`。
+3. `scripts/record_builder.py`、`scripts/check_llm_out.py`：中间目录同步加 `sfx()`；check_llm_out 加 `--shard`。
+4. `scripts/rework.py`：`list` 加 `--shard`，按「来源群→所属分片」过滤返修池，两片各修各的、不抢同一条。
+5. `scripts/config/chat_sources.json`：每个群新增 `shard` 字段。**A 片（6 群）**＝turkey_price / qingdao_latam / tianjin_latam / europe_price / cma_emc_pil / meijia_sales；**B 片（5 群）**＝cosco_hmm_msk_oocl / dalian_latam / huanan_latam / one_zim_hpl_csp / ningbo_space（华南↔ONE 转发对同留 B 片，且 ocr_cache 全局，转发图不受拆分影响）。
+6. **定时任务 2→4**（Asia/Shanghai）：低频 A `0 9-13`、低频 B `5 9-13`、高频 A `*/10 14-18`、高频 B `5-59/10 14-18`。B 比 A 晚 5 分钟错峰，避免两片同时抢宿主 dws。
+7. 源目录 `sync` 到运行副本 `~/.qwenworkcn/skills/freight-rate-heartbeat/`，字节比对复验 0 差异。
+
+**新配置键**：环境变量 `FRT_SHARD`（A/B；不设＝全量、沿用旧无后缀目录，向后兼容）；`chat_sources.json` 群对象新增 `shard`。
+
+**验证**：py_compile 五脚本通过；离线探针——不设分片返回 11 群、A 返回 6、B 返回 5、并集 11 交集空（无群掉出两片）；`pipeline.py status --shard A/B` 建出 `run_0920A/`、`run_0920B/`；`check_llm_out.py --shard` 空目录返回"全部干净"退出码 0；`rework._NAME2SHARD` 在 `FRT_SHARD=B` 下仍读全 11 群映射。
+
+**并发安全**：两片目录完全隔离，`watermark.json`/`ocr_cache` 按 (群,槽) 与 (mediaId) 写、无交叉；最坏情况是某轮 >5 分钟导致另一片一轮被调度器 skip，无数据损坏、无 content_key 重复，下轮补拉。09-19 实测 11 群单轮 p50 2.7 / p90 4.8 / 最长 7.7 min，半量两片应显著低于错峰间隔。
+
+**回退**：`git checkout` 上述 6 个 Skill 文件 + `chat_sources.json`（未分片前版本）→ 再 `skill_diff.py sync`；定时任务把低频 A/高频 A 的 payload 去掉 `--shard`、删掉两个 B 任务即可恢复 2 任务全量。台账库数据本次零改动，无需数据回退。
+
+---
+
 ## 2026-09-17（前端：功能区默认折叠——撤销后按新双视图结构重做，已上线）
 
 **经过**：你先要求"航管端每个卡片（＝功能区组件，带标题的区块）可折叠且默认折叠"。第一版我误做成"报价工单卡折叠"→ 回滚重做为功能区折叠 → 你改主意要求撤销（纯删 60 行、净变化归零）→ 等另一会话的视图拆分落地（`OPS_TABS` 5 ＋ 新 `CFG_TABS` batch/admin/alias/shadow ＋ `view-config`）后，**按新结构重做并重新上线**。
@@ -406,6 +518,108 @@
 - 生效条件：新接口要重启台账服务（当前跑着的进程是旧的，`/api/pending/sync` 会 404）；前端 index.html 是运行时直读，刷新页面即可。
 - 本次无表结构变更（不加列、不加表），`pending_records` 只是 payload/edit_log 里多一个键。
 
+### 同日第二轮：强匹配字段防覆盖 + 未过原因直显
+
+- **防覆盖（用户反馈：随手打的值把原先正确的港口冲掉，事后看不出来）**。原来编辑是"输入即存"，`/api/pending/update`
+  把手打一半的值连 payload 一起写了，只把 `check_status` 翻成 failed——原值就没了。现在两层拦：
+  - 服务端 `manualdb.update_pending` 为权威：`STRICT_KEEP_FIELDS = 起运港/目的港/船司/航线/柜型/舱位类型`，
+    闸门在这些字段上报未命中且这次确实改了该字段 → **该字段回退保留原值**，同一次编辑的其他字段照常落库，
+    被回退字段不计 edit_log（没写进去的不算人工改动）、在返回值 `rejected[{field,input,kept,msg}]` 里报给前端，
+    并记一条 `WARN 强匹配回退`。原本就脏、这次没碰的值不背锅也不会被顺手抹掉。
+  - 前端 `pdSplitStrict/cnResolves` 只做纯判断（不改输入框，避免打字打到一半被抹），落不到主数据的值这次不发出去，字段标红；
+    服务端回退回来的再还原输入框并 toast 说明保留了什么值。**批量同步同源**：候选只取服务端已存的 payload，
+    `sync_pending_field` 遇到 `rejected` 记为 skipped（"…不在主数据，已保留原值未改"），绝不刷进整条队列。
+  - 代价：编辑时不能再把主数据外的值"先存着回头处理"，也不会在卡片里清空某个字段（`collectFormFields` 本来就不带空值）；
+    要新增港口/船司得走主数据或候选批准。
+- **待审核「校验」列直显未过原因**：第一行 `未过 ＋N 项`，第二行 `.pd-why` 单行显示第一条原因、超宽 CSS 省略号截断、
+  悬停 `title` 看全文（多条按"原因1；原因2"给全）；无原因文案的旧数据退回只显示"未过"。9 列宽度重排，校验列 7%→15%。
+  实测原因长度：57 条未过里中位 18 字、最长 57 字，14 条有多项原因。
+- 回归：`manual_check` 6.85 段升到 **21 条断言**（新增"打不进主数据 → 保留原值且其他字段照常保存"、"回退不留 edit_log"、
+  "同步也不刷脏值"），`web_check` 结构断言升到 8 条。
+- 服务重启：台账进程 11:32:47 与 12:14 前各被外部终止一次（日志无 Traceback、`manual.pid` 未删 → 不是走 `stop-manual.bat`，
+  机器自 09-16 未重启），已按 PID 停旧起新；为加载本节全部改动共重启两次，现跑 **pid 34632**。
+- 本轮 `manual_check` 出现 **5 项红，非本会话造成**：另一会话正在做港口改名迁移（11:27:43 删 `Tianjin New Port`，
+  现规范名为 `Xingang`），于是"起运港候选含 Tianjin New Port""天津→Tianjin New Port 归一""多值交集"等用例按旧名断言而红，
+  另有 carriers 52≠50 与船司 sort 两项也是对方在途改动。测试期望该跟到新名还是回滚改名，由做迁移的那一侧定，我不替对方改断言。
+  需要留意的存量影响：`freight_rates` 仍有 **38 行 `pol='Tianjin New Port'`** 指向已不存在的规范名，
+  要么补 `Tianjin New Port → Xingang` 别名，要么把存量迁到新名，否则销售端筛"天津"看不到这批历史价、体检也会报孤儿引用。
+
+### 同日第三轮：舱位「船名航次」改选填（现舱消息常不给船名）
+
+业务实况：群里一句"ONE 现舱 CALLAO 5高 / MANZANILLO 2高"只报港口+舱位类型，根本没有船名，旧口径把 `船名航次` 列必填，
+只能逼着判定层编一个或写占位符。用户拍板改选填。口径改动要**四处一起动**，少一处就是文档与闸门打架：
+
+1. 闸门 `manualdb.REQUIRED_BY_KIND["space"]`：`起运港/船司/船名航次/舱位类型` → **`起运港/船司/舱位类型`**。
+   `PLACEHOLDER` 占位符规则不动：写了 `(未注明船名)` 仍按未填打回（选填 ≠ 可以瞎填）。
+   身份键 `IDENTITY_COLS` / `_IDENTITY_CN` 里保留 `vessel_voyage`：给了船名的仍然按船名区分产品，不被合并。
+2. 前端 `SPACE_FIELDS.vessel_voyage` `req:true → false`（现舱录入表单与待审编辑卡共用这一份定义，星号与必填空格一起消失）。
+3. 契约文档：`Database/docs/agent-input-contract.md` 必填列 ✅→✕、`docs/standardization-review-spec.md` 的常量镜像同步。
+4. 心跳技能：`scripts/llm_output_contract.md`、`references/data-review.md`（审查清单第 2 条）、`references/extraction-rules.md#23`
+   三处改口径，并按"源→运行副本"同步到 `~/.qwenworkcn/skills/freight-rate-heartbeat`。
+   顺手做一次全量比对，发现两份群聊规范已在漂移：台账批准候选时会把「别名登记日志」写进**项目内源目录**（今天 11:01），
+   而心跳实际读的运行副本还停在 09-14 → 已同步，现两棵树 0 差异。以后改完 skill 必须做这个全量比对，不能只复制自己改的那个文件。
+
+配套修的一个死路：待审卡片原来 `collectFormFields` 只收非空值，**"把某个字段的值抹掉"这件事根本传不到服务端**，
+所以占位船名这类行只能驳回。新增 `collectCardFields(id)`：表单里被清空、而 payload 里原本有值的字段显式发 `""`
+（`消息原文` 例外，逐字溯源文本永不清空），`pdInstantSave` / `collectPendingFields` / `pdSwitchKind` 三处改用它。
+与上一轮的强匹配防覆盖不打架：清空 `目的港` 这类必填仍会被 `STRICT_KEEP_FIELDS` 回退保留原值，清空 `船名航次` 则真的落库。
+
+回归：`manual_check` 新增 2 条（现舱不给船名 → 过机械校验；占位船名在卡片里清空 → 校验翻 passed 且 `rejected` 为空），
+原「占位符船名 → failed」保留不动；全套 **117 项绿 + 5 项红**，5 项红仍是上一节说的那批改名在途用例，与本节无关。
+
+### 同日第四轮：看板变慢的定位与修法（不是 tooltip 的锅）
+
+用户反馈"改完这些之后网页明显变慢"。分层取证（同一进程内交替采样、只读真库副本，避开另一会话的 CPU 干扰）：
+
+| 一层 | 耗时 |
+|---|---|
+| `connect()`（DDL + `_migrate` + 建索引，每请求一次） | 2.6 ms |
+| `list_pending` 50 行（SQL + json 解析） | 2.5 ms |
+| **`images_for × 50 行`（旧实现）** | **127 ms** |
+| `images_for × 50 行`（新实现） | 0.2 ms |
+| 整包 json 序列化 | 0.9 ms |
+| `Master` 索引 | 冷建 26.6 ms / 缓存命中 0.001 ms（TTL 300s，主数据一提交即作废） |
+
+- 根因：`_resolve_image` 精确名没命中就 `imgdir.iterdir()` 扫整个 `images/` 并逐个 `is_file()`。一条消息拆出的多行重复解析同一批 mediaId
+  （本页 68 次引用其实只有 **6 个不同名**），而 `images/` 会随心跳下载持续增长 → 接口耗时随"行数 × 目录大小"线性涨，这就是"最近才变慢"的原因。
+- 修法：`images/` 的 mtime 做目录指纹（一次 `stat`）+ 一次性建"mediaId 词干前 16 字符 → 文件名"索引 + 单个名字的解析结果 memo（4000 条上限防御）。
+  **等价性不靠嘴说**：拿全队列 payload、两张业务表的 `image_file/image_url`、以及 `images/` 92 个文件的两种写法（含 `@词干` 形式）
+  共 **185 个引用名**，逐一比对新旧实现结果 —— **0 差异**。目录增删文件下一请求即生效（mtime 变了就重建）。
+- 列表瘦身：`/api/pending` 不再回传 `orig_payload`（前端 0 处使用，50 行占 53KB）；`edit_log` 保留（留痕核对与回归断言要读）。
+  报表脚本 `ops/pending_review.py` 走自己的 sqlite 连接，不受影响。
+- 实测（同一台机、另一个会话还在跑的时段）：`/api/pending` 50 行 339–474 ms → **11 ms**；approved 50 行 → **8 ms**；
+  `/api/rates` 50 行 414–611 ms → **5 ms**；`/api/pending` 200 行 1.25–2.0 s → **16 ms**。
+- 两个坑记下来：① **指纹计算里不能放被缓存的昂贵操作**——我第一版为算"目录有没有变"每次解析都 `iterdir` 全目录，127 ms 反而涨到 217 ms；
+  ② 按命令行特征批量杀 `manual_server` 会连带杀掉 `manual_check` 自己起的 8791 测试实例（本轮回归就被打断过一次，报"连接被拒"先想到这条）。
+- 回归：`manual_check` 仍 **117 绿 + 那 5 项改名在途红**，本次改动零新增红；服务已重启加载（pid 35648）。
+
+### 同日第五轮：身份码芯片（用码把"这条有什么问题"粘给 agent）
+
+- 形状：待审条目 `#<pending id>`；已放行行 `#<id>·<content_key 前12位>`；销售端台账详情 `key:<content_key 前12位>`。
+  点击复制（clipboard API，局域网 http 非安全上下文自动退回 execCommand）。挂载位置：分组表格每行、展开编辑卡头、
+  驳回日志卡、港群候选卡、台账详情「来源」块。注意 `target_key` 是"预判更新目标"不是本条身份，不拼进码。
+- agent 侧协议写进 `Database/docs/agent-integration-spec.md` 第 6 节：三种码的定位 SQL + 诊断顺序
+  （先 `errors` 机械闸门原话 → 再 `edit_log` 人工改动史（`sync_from`=批量同步来的）→ `orig_payload ↔ payload` 对照归一改写 → 台账行 `status/supersedes`）。
+- 码只用于定位不用于改写：修改仍走既有接口，强匹配防覆盖与同步护栏照常。
+- `web_check` 加结构断言钉住芯片在位；`js_check` 通过。纯前端改动，刷新页面即生效（无需重启）。
+- 用户裁定后调整：**展开编辑卡头的芯片撤掉**（行级码在表格行里已有）；**组卡头部新增组级码 `组:<消息ID>`**
+  （一条消息 = 主条目整体；看板显示截断前 12 字符、复制给全量；无消息ID 的单行兜底组不显示）。
+  复制实现改为 `data-code` + 文档级事件委托——消息ID带斜杠/加号，拼 onclick 有转义隐患，一并消除。
+  `agent-integration-spec.md` 第 6 节补 `组:` 码的定位 SQL（待审按 `payload LIKE`、台账按 `mid` 列）。
+
+### 同日第六轮：主数据新增 BP 港群（巴西基础港）
+
+- 用户口径：`BP` = 巴西基础港，是**港群**，成员 = 国家为巴西的全部港口。已建：
+  `port_groups(name=BP, label=巴西基础港, kind=pod, members=44 港, note=口径来源与建组时间)`。
+  成员按 `ports.country='BR' AND kind LIKE '%pod%' AND active=1` 取（国家列是 ISO 码，44 个全 active）。
+- 建组前先做折叠键冲突检查（`manualdb.fold('BP')='bp'` 与全部 ports 名/别名/port_groups 名比对，**无冲突**，避免 ECSA 那次的误伤重演）。
+- 端到端验证（正式 `/api/pending` 路径，验证后 force 删）：`目的港=BP + 柜型 20GP/40HQ/40NOR + 价 6820/7130/6030`
+  → 自动拆 3 条、**全部 passed**、目的港归一为港群名 BP（群价语义：查任何成员港也会带出 BP 群价，与 NEB 同机制）。
+  注意 `/api/validate` 是单条原样预检、不做多档展开，拿它验证多档记录会误报柜型/价格错——多档要走上库路径看。
+- 航线派生不给 BP 猜子线（未登记映射，同 NEB 留空先例）：报价里航线要明示（如南美东），不填不猜。
+- 并发注意：验证时另一会话正在写库，`POST /api/pending` 报过一次 `database is locked`（15:52:17），重试即过——
+  多会话并行写库期间批量操作要带重试。存量待审里暂无目的港=BP 的行，下次心跳拉到含 BP 的消息会直接过闸。
+
 ## 2026-09-18（土耳其群 Istanbul 被改写：审核、主数据修正、20 行数据恢复）
 
 用户裁决「群里出现的目的港原样可用，Istanbul 就是 Istanbul」。审核确认判定层无误（agent 写 ISTanbul 且 rule_basis 正确引用本群规范），
@@ -429,3 +643,90 @@
 剩 57 行是三类口径待定：必填为空 32（正常交人工）、`+` 是否为并列分隔符（`+TAO` 与之冲突，且 manualdb 有会话在改）、
 `ECSA via X` 是否豁免主数据命中 —— 均未擅自改判据，写在 `Database/ops/reports/Istanbul改写审核-2026-09-18.md`。
 更正：Xingang 的 LOCODE 由我误写 CNTSN，按用户口径改为 **CNTXG**（aliases 同步替换，防止将来另建"天津"实体时两码撞在同一港点）；预检复验 天津/Tianjin/Tianjin New Port/Xingang/CNTXG 五种写法均归一到 Xingang。
+
+---
+
+## 2026-09-18（组内原子性：同一条消息拆出的子条目同进同退，不再一半已通过一半未过）
+
+**缘由**：你要求"一个条目下但凡有一个子条目出问题，整个条目一起进未过"，否则审核员判断不了识别完整性——实例是 `4000/6000/6000/5200 NOR`，待审里只把 20GP 和 40HQ/HC 摆在"已通过"，NOR 躺在未过，人分不清是识别漏了还是在另一栏。
+
+**动作**（只改判定状态与说明文字，**不改任何字段值、不代替人工放行**）：
+
+1. `manualdb.GROUP_MARK = "组完整性"` ＋ `enforce_group_atomicity(conn, dry_run=False)`：按 `(消息ID, kind)` 归组，先剥掉旧标记得到每条**真实**错误，组内只要有一条真错未清 → 整组 `check_status=failed`，并在每条 errors **末尾**追加一条连坐说明（真实错误仍排在前面，审核员先看到自己的问题）；全组修好后标记自动摘除、整组回 passed。没带 `消息ID` 的行按 `row-<id>` 自成一组，不牵连别人。
+2. **三个挂钩**：`stage_pending` 末尾（新写入即判组）、`approve_all_pending` 末尾（批量放行后剩下的组重判）、`manual_server.GROUP_TOUCHING` 端点之后统一重算（`/api/pending`、`update`、`approve`、`reject`、`restore`、`delete` 全覆盖；失败只 WARN 不影响主流程）。因为重算扫的是全表 awaiting，**任何一次待审写入都会顺手把历史拆开的组收口**。
+3. **新端点 `POST /api/pending/regroup`**（`act_pending_regroup`，**默认 `dry_run=True`**）：给你"先看会翻多少条、再决定回灌"的口子，符合批量改写铁律。
+4. **前端零改动**：连坐说明走的就是 `errors` 数组，列表行首行直显 ＋ 悬停全文（`pdGroupCellsHtml` 的 `why`）已现成。
+5. **契约与 skill**：`agent-input-contract.md` 增补"子条目同进同退 ⇒ 同一条消息的所有记录必须填同一个 `消息ID`"；`extraction-rules.md` 新增规则 **26**（同一条消息拆出的记录必须带同一个消息ID，漏填＝自成一组、享受不到连坐），源→运行已同步（`ops/skill_diff.py` 复验 35/35 一致）。
+
+**数据实况（本轮 09-18 复测，只读）**：待审 547 条 / 41 组，`消息ID` 覆盖率 **100%**；带连坐说明 211 条；**被拆到两边的组 0 个**；生产服务（8795）已加载新代码，`regroup dry_run` 回 `groups_fixed=0, flipped=0`。早前预览的"12 组 / 136 行待翻"已由后续心跳写入触发的全表重算自动收口，**不需要我再手工回灌**。你举的例子核对：含 `40NOR` 的 8 组现在整组同状态（`msgb4c87…` 22 条全未过、`msgjURvQXz…` 48 条全通过里 NOR 15 条与 20GP/40HQ 并列）。
+
+**验证**：`manual_check` 新增 4 条断言（2 好 1 坏 → 整组未过；连坐说明落满 3 条而真实错误只落在坏的那条；改好坏的后整组回 passed 且标记清零；`regroup` dry_run 不落库），全套连跑两次**全绿**；`js_check`（3830 行）/ `web_check` / `validity_rule_check` 通过。
+
+**事故留痕（两条，都归我）**：① 往 `manual_check.py` 插用例时，把带 ASCII 双引号的中文标签写进了双引号字符串（`ck("好的那两条带"组完整性"说明…")`），整文件 SyntaxError → 回归"0 项运行"看着像跑完其实没跑。已改 `「」`，规矩：**中文断言标签里要引号一律用「」**。② 一度报"天津两条红"，我没有先归因给另一会话的改名中间态就准备下结论，改用只读探针取证：`天津/Tianjin/Tianjin New Port/Xingang/CNTXG` 五种写法同组、历史 38 行不改数据即命中，红是改名在途，**断言一行未动**，临时诊断码已摘除干净（含顺手加的 `import os`）。
+
+**新增小工具**：`Database/ops/skill_diff.py`——skill 源↔运行目录全量字节比对（默认只报差异，`sync` 才把"两边都有且内容不同"的文件源→运行覆盖，只增不删）。以前这一步靠记忆，最容易漏。
+
+**回退**：代码侧删 `manualdb.GROUP_MARK` 与 `enforce_group_atomicity` 及其两处调用、`manual_server` 的 `regroup` 路由与 `GROUP_TOUCHING` 包装；数据侧调 `enforce_group_atomicity(conn)` 前先把各条 errors 里 `field="组完整性"` 的元素剔除、再按剩余 errors 是否为空重算 `check_status`（一条 python 即可，不动 payload/价格/原文）。
+
+---
+
+## 2026-09-18（更正上一条：整组"同进同退"只改归属，不改判定——连坐刷未过是错的）
+
+**你的否决**：「已过就是已过，只是单纯出现在未过界面确保条目完整性而已」。上一条我把同组通过条目 `check_status` 直接刷成 failed 还塞进「组完整性」假错误，等于篡改机械校验结论，生产里已污染 **243 条判定 / 319 条带标记**（670 条待审中）。这条把机制摆回正确位置。
+
+**新实现＝读取时派生，写路径一律不碰判定**：
+
+1. `manualdb.GRP_KEY_SQL / GRP_BAD_SQL`（相关子查询按 `COALESCE(消息ID,'row-'||id)`＋`kind` 找同组是否有未过）＋ `_pending_where(..., group_aware=True)`：**未过页签**＝自己有错 **或** 同组有错；**已通过页签**＝自己通过 **且** 整组通过。两页签之和恒等于待审总数（实测 337＋333=670，不重不漏）。
+2. `list_pending` 默认 `group_aware=True`，并给每行附派生 `group={total,bad}`；外层 SQL 起别名 `p` 供子查询引用。批量同步的候选扫描（`scan_sync_targets`）**不开** group_aware，口径不变。
+3. 写入侧全部撤销：删 `stage_pending` 与 `approve_all_pending` 末尾的 `enforce_group_atomicity` 调用、删 `manual_server.GROUP_TOUCHING` 常量与"每次 POST 后重算"的包装（顺带省掉每次请求多开一个连接）。
+4. 「一键放行全部已通过」同口径：只选**整组都通过**的行，回报新增 `held_by_group`（被同组未过条目押住的条数）；前端按钮计数走同一个 `check=passed` 查询，天然一致。
+5. 前端只加两句派生说明，**行的"通过/未过"徽标一个字节没改**：组头加琥珀色「通过的仍算通过 · 整组一起看（同组 N 条未过）」；`PD_PAGE=50` 导致整组跨页时再加「本组另有 X 条不在本页」——不假装整组都看得见。
+6. 遗留污染复原工具 `manualdb.group_mark_cleanup(dry_run=True)`（挂在原 `POST /api/pending/regroup` 上，端点名不变以兼容已发出去的对接说明）：剥掉旧「组完整性」标记，再按剩下的真实 errors 还原每行自己的 `check_status`。**默认只预览**。
+
+**顺序依赖（重要，别搞反）**：生产服务（8795）现在跑的还是**旧代码**，它会继续把整组刷成 failed。所以必须**先重启加载新代码，再跑 cleanup**；先 cleanup 会被下一次待审写入重新污染。**当前生产数据我一行未动**，副本预览＝扫 670 / 剥标记 319 / 还原判定 243。
+
+**验证**：`manual_check` 那组断言按新语义重写为 6 条（好的两条仍 passed；整组出现在未过页签、已通过页签不出现半截组；不给任何行写假错误；派生 `group.total/bad`；修好后整组回已通过；造一条被污染的旧行经 `regroup dry_run=false` 复原回 passed），全套连跑**全绿**；`js_check`（3853 行）/ `web_check` / `validity_rule_check` 通过。skill 规则 26 与 `agent-input-contract.md` 的机制描述同步改成归属口径，源→运行复验 35/35 一致。
+
+**教训（已写进记忆）**：状态能由查询派生就别存、更别去改别人的结论字段——这条你早定过（"能算出来就别存"），我没套用；把"整组一起看"错实现成"整组一起判错"，本质是拿显示需求去改数据。
+
+**回退**：读侧删 `_pending_where` 的 group_aware 分支与两个 SQL 常量、`list_pending` 的 group 附加；放行侧把三条 SQL 的 `AND NOT/AND " + GRP_BAD_SQL` 去掉；前端删组头两个 badge。数据侧无需回退（本轮没有新写入）。
+
+---
+
+## 2026-09-18（两对折叠同名港口合并：Vitoria/Vitória、'Aqaba/Aqaba ＋ master_save 加撞名拦截）
+
+**现象**（你在待审里报的）：组 `msgihlNanTtNwGXBWhL9f1+Lg==` 里目的港 `Vitoria` 报"不在港口/港群主数据里，请从联想里选"，而**联想里两个 Vitoria 点哪个都是这句**，死循环。
+
+**根因**（不是闸门判错，是前端索引把键整条丢了）：`ports` 里有两条在用港口 `Vitoria`(BR/BRVIX，种子 `nominated:南美东:海港名精确`) 与 `Vitória`(BR/BRVIT，`source=auto`)，前端 `foldKey()` 去重音后两者同名 `vitoria` → `buildAliasIndex` 按"一别名指向两实体就置 null 并丢弃"的规则**整个删掉该键** → 无论点哪条都查不到 → 报"不在主数据"。更糟的是服务端 `name_idx` 是"后来者覆盖"（`ORDER BY name` 让带重音那条赢），所以**绕过界面用 API 提交会被归到 `Vitória`**：前后端两套口径不一致。全库同型死键只有 2 对（另一对 `'Aqaba / Aqaba`，别名一模一样、亚喀巴同样点不中）。
+
+**动作**（备份 `归档\freight_manual.pre-vitoria-merge-163914.db`，4.8MB，可 `--import` 回灌）：
+
+1. **合并保留 `Vitoria`**（你选的）：`Vitória`、`BRVIT` 并入其 aliases，`Vitória` 置 `active=0`（停用不删行）。
+2. **合并保留 `Aqaba`**：`'Aqaba`、`JOAQB` 并入其 aliases，`'Aqaba` 置 `active=0`——规范名取不带撇号的（业务好打），撇号写法保留为别名不丢。
+3. **港群去重**：`BP.members` 里 `Vitoria` 与 `Vitória` 并排存在（同一实体当两个成员，双向展开会算两遍），去掉带重音的，44→43。
+4. **写入口拦截（防再犯）**：`master_save` 对 ports 新增校验——在用港口的规范名/别名与**另一条在用港口**折叠撞名即拒绝并点名冲突对象；`active=0` 停用路径放行（否则永远合并不了）。顺序有讲究：**先停用重复行、再吸收别名**，反了会被这层新防护挡下。
+5. **前端说实话**：`buildAliasIndex` 可选收集撞名对存进 `S.portAmbig`；`hardNormalizePort` 遇"因撞名被丢键"不再谎报"不在主数据里"，改说「有两条规范名折叠后同名（X / Y），先在库管理→港口合并」。
+6. **存量重判**：20 条含 Vitor/Vitória 写法的待审行发 `fields={}` → **13 条转通过**，7 条仍不过但与本次无关（`ECSA via IPANAMA`、`QINGDAO+TAICANG`、`TAICANG+南沙`，属另一会话记的三项待定口径）。
+
+**验证**：`Vitoria/Vitória/维多利亚` 三种写法都归一到 `Vitoria`；前端等价索引 `vitoria → Vitoria`（不再 null）；**已入库 7 条 `pod='Vitória'` 的报价按 `Vitoria` 筛选全命中**（`port_filter` 变体展开含带重音写法，不断链）；`Aqaba/'Aqaba/亚喀巴` 同理归一到 `Aqaba`；`audit_master` 的"规范名折叠后重复"1 项→**0 项**、error 级 0；港群断链复查无。`manual_check` 加 2 条断言（重新启用撞名港被拒、合并动作不被误伤），四套回归全绿（`js_check` 3919 行 / `web_check` / `validity_rule_check`）。
+
+**待生效**：`master_save` 这层防护在 `manualdb.py`，**要重启 8795 才拦得住**（当前进程仍跑旧版，提速改动也等这次重启）；前端文案是静态文件，刷新即生效。
+
+**回退**：两条 `ports` 的 `active` 改回 1、aliases 摘回原串（`Vitoria`=维多利亚,Vitoria,BRVIX；`Aqaba`=亚喀巴,Aqaba,'Aqaba,JOAQB），`BP.members` 补回 `Vitória`；或整库用上面那份备份 `--import` 回灌。
+
+**补记（同日，你回"好"授权）**：待审 `#1147` 的目的港 `ITAGUAI` **不是死键，是真缺实体**——全库 `ita*` 只有 Itajai/Itacoatiara/Itaqui/Itapoá/Ita Enramada，`Itaguaí` 根本没有。按别名纪律新建 `ports` **`Itaguai`**（BR，pod；规范名取不带重音的，免得将来补 `Itaguai` 又造一对折叠死键；带重音写法 `Itaguaí` 登记为别名；`locode_ref` **留空待人工核**，怀疑是 `BRIGI` 但不替业务定；note 里写了来历）。同图三档 `#1145/#1146/#1147`（20GP 7475 / 40HQ-HC 8225 / 40NOR 7125，达飞青岛-Itaguaí 9.21-10.14）发 `fields={}` 重判 → 三条全 `passed`；**整条消息的 rates 组 54 条真错归零**，按整组归属从"未过"页签整体移入"已通过"（实测：已通过页签含该组 54 条、未过页签含 0 条），"一键放行"候选也从 0 变 54 条。待你判的业务口径：该报价备注写着**"停接（暂停接载）"**，要不要作为当前价入库（或只留痕/驳回）。
+---
+
+## 2026-09-22（消息级条款字段补齐：Freetime 只挂一档导致 F/T 列一半空）
+
+**现象**（你报的）：组 `msgIvNR9dX3oEHl+W2zeCf0Uw==` 的 F/T 列"都匹配不到"。原文只有一行条款 `Freetime：10days 【HDL USD 25/柜】`，拆成两档柜型后 **20GP 带了 目免=10、40HQ/HC 是空的**（已入库行 399 有值、398 为空）。**不是主数据问题、也不是 AI 没看懂**（两行的 `备注` 里都逐字抄着这句），是拆分时消息级条款没对齐。
+
+**动作**（纯机械兜底，零 AI/token 成本；**只补空、绝不改已有值**）：
+
+1. `manualdb.MSG_LEVEL_FIELDS = ("目免", "T/T航程", "亏舱费")` ＋ `inherit_message_fields(records)`：按 `消息ID` 归组，组内该字段**只有唯一非空值**时补进空行。两种情况绝不动——组内出现**多个不同值**（业务上免箱期确实按柜型分档，20GP 7 天 / 40HQ 14 天是真事）、或**整组都没值**（不猜，交采集/人工）。
+2. 挂在 `manual_server.act_pending`（暂存之前跑），`POST /api/pending` 响应新增 `inherited: [{消息ID, 字段, 值, 柜型, 来源群}]`，并记一条 INFO 日志——采集端能看见兜了几处，而不是被静默改写。
+3. skill `extraction-rules.md` 新增**规则 29**（消息级条款必须逐档带全，闸门兜底不是借口；`HDL USD 25/柜` 是超期堆存费、留在 `备注`、不许塞进 `目免`），源→运行复验 37/37 一致；`agent-input-contract.md` 同步一行 `inherited` 说明。
+
+**验证**：`manual_check` 新增 4 条断言全绿——只一档带值 → 另一档补齐 `10`；`inherited` 明细正确；两档不同值（7/14）→ 一律不动；整组无值 → 保持空。隔离副本端到端复现确认（临时端口 8792，未碰生产库）。
+
+**未做/待办**：已入库那条 `40HQ/HC`（id=398）的目免仍是空——业务表只追加，补它要走"追加一条修正记录＋留痕"，等你发话，我不代改也不代放行。另外本轮跑回归时撞上两件事（都属另一会话在途，未代改）：① `token_manual.txt` 只剩 4 字节，本机令牌短到回归断言都过不了，局域网鉴权形同虚设，建议删文件让服务重生成；② 新加的「港口覆盖率」校验把原文里的**起运港**也算成"漏识目的港"（`MSC 宁波-桑托斯…` → 报 `未识别的目的港：Ningbo`），以 error 身份挡放行，会被整组归属放大成整条消息卡死，且 `Spanish base ports` 港群成员 `Gijon/Malaga` 在 `ports` 里不存在（2 条 error 级断链）。
