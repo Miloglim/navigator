@@ -2731,7 +2731,7 @@ const S = {
   useDefaults: true,
   sales: { tab: 'rates', page: 1, total: 0, rows: [], groups: [], tabCache: {}, openKey: null,
            queried: false, groupScope:null, groupJumpName:null, appliedQuery:null, collapsed: new Set(), sorts: {rates:null,space:null}, loadRevision:0,
-           companyTasks:{company:null,realtime:null}, quoteSelection:new Map(), quoteSpaceSelection:new Map(), companyQuoteItems:new Map(), realtimeQuoteItems:new Map(), quoteKeyRegistry:new Map(), quoteKeySequence:0, quoteView:'rates' },
+           companyTasks:{company:null,realtime:null}, companySort:null, realtimeSort:null, quoteSelection:new Map(), quoteSpaceSelection:new Map(), companyQuoteItems:new Map(), realtimeQuoteItems:new Map(), quoteKeyRegistry:new Map(), quoteKeySequence:0, quoteView:'rates' },
   opts: null,
   token: '',
   auth: null,
@@ -3074,11 +3074,57 @@ function companyQuoteSelection(row,key){
     remark:item.remark||'',valid_from:companyIsoDate(item.valid_from),valid_to:companyIsoDate(item.valid_to),fresh:row.fresh===true};
 }
 let realtimeDetailItems=[];
+let realtimeRows=[];
+let realtimeContainerId=12;
 const REALTIME_CONTAINER_LABELS=Object.freeze({1:'20GP',11:'40HQ/HC',12:'40HQ/HC',20:'40NOR'});
 const REALTIME_CONTAINER_IDS=Object.freeze({'20GP':1,'40GP':11,'40HQ/HC':12,'40NOR':20});
 const REALTIME_VIA_DIRECT=1;
 const REALTIME_VIA_TRANSFER=2;
+const REALTIME_DEFAULT_SORT=Object.freeze({field:'ocean_price',direction:'asc'});
+const REALTIME_SORT_LABELS=Object.freeze({carrier:'承运人',pol:'起运港',pod:'目的港',etd:'ETD',vessel_voyage:'船名 / 航次',eta:'ETA',ocean_price:'海运费',total_price:'单箱总价',obtained_at:'获取时间'});
 function realtimeContainerLabel(containerId) { return REALTIME_CONTAINER_LABELS[Number(containerId)]||'柜型'; }
+function realtimeSortValue(entry,field) {
+  const q=entry.quote||{};
+  if(field==='carrier') return q.carrierName||companyItemName(entry.row.item,true);
+  if(field==='pol') return q.pol?.terminalEnName||q.pol?.name||'';
+  if(field==='pod') return q.pod?.terminalEnName||q.pod?.name||'';
+  if(field==='etd') return q.etd==null||q.etd===''?null:(Number(q.etd)||null);
+  if(field==='vessel_voyage') return [q.vessel,q.voyage].filter(Boolean).join(' / ');
+  if(field==='eta') return q.eta==null||q.eta===''?null:(Number(q.eta)||null);
+  if(field==='ocean_price') return q.totalOceanPriceUsd==null||q.totalOceanPriceUsd===''?null:Number(q.totalOceanPriceUsd);
+  if(field==='total_price'){
+    if(q.totalPrice==null||q.totalPrice==='') return null;
+    const value=Number(String(q.totalPrice).match(/[+-]?(?:\d+\.?\d*|\.\d+)/)?.[0]);
+    return Number.isFinite(value)?value:null;
+  }
+  if(field==='obtained_at') return q.obtainDate||(entry.row.created_at?entry.row.created_at*1000:null);
+  return '';
+}
+function realtimeSortedEntries(entries) {
+  const sort=S.sales.realtimeSort||REALTIME_DEFAULT_SORT;
+  const direction=sort.direction==='desc'?-1:1;
+  return entries.map((entry,index)=>({entry,index,value:realtimeSortValue(entry,sort.field)})).sort((a,b)=>{
+    const av=a.value,bv=b.value,ae=av==null||av===''||(typeof av==='number'&&!Number.isFinite(av)),be=bv==null||bv===''||(typeof bv==='number'&&!Number.isFinite(bv));
+    if(ae||be) return ae===be?a.index-b.index:(ae?1:-1);
+    const cmp=typeof av==='number'&&typeof bv==='number'?av-bv:String(av).localeCompare(String(bv),'zh',{numeric:true,sensitivity:'base'});
+    return cmp?cmp*direction:a.index-b.index;
+  }).map(item=>item.entry);
+}
+function realtimeSortHeader(field,label) {
+  const selected=S.sales.realtimeSort,sort=selected||REALTIME_DEFAULT_SORT,active=sort.field===field,dir=active?sort.direction:'';
+  const next=!selected?(field===REALTIME_DEFAULT_SORT.field?'降序':'升序'):!active?'升序':dir==='asc'?'降序':'恢复默认排序';
+  const tip=field==='ocean_price'?'按美元海运费排序':field==='total_price'?'按显示的首个金额排序':field==='obtained_at'?'按获取时间排序':'按字段排序';
+  return '<th data-realtime-sort="'+field+'" aria-sort="'+(active?(dir==='asc'?'ascending':'descending'):'none')+'"><button type="button" class="sales-sort-button'+(active?' active':'')+'" onclick="realtimeToggleSort(\''+field+'\')" title="'+tip+' · 点击'+next+'">'+esc(label)+'<span class="sales-sort-arrow" aria-hidden="true">'+(dir==='asc'?'↑':dir==='desc'?'↓':'↕')+'</span></button></th>';
+}
+function realtimeToggleSort(field) {
+  const old=S.sales.realtimeSort;
+  S.sales.realtimeSort=!old?(field===REALTIME_DEFAULT_SORT.field?{field,direction:'desc'}:{field,direction:'asc'}):old.field!==field?{field,direction:'asc'}:old.direction==='asc'?{field,direction:'desc'}:null;
+  const table=document.querySelector&&document.querySelector('#company-rate-realtime .realtime-rate-table');
+  if(table){
+    table.outerHTML=realtimeRateList(realtimeRows,realtimeContainerId);
+    syncQuoteTableSelectAll(document.querySelector('#company-rate-realtime .realtime-rate-table'));
+  }
+}
 function realtimeRouteMode(q) {
   const terminals=(q?.viaTerminals||[]).map(port=>port.terminalEnName||port.terminalName||port.name||port.terminalCode).filter(Boolean);
   const viaWay=Number(q?.viaWay);
@@ -3121,11 +3167,15 @@ function realtimeQuoteSelection(entry,key){
 }
 function realtimeRateList(rows,containerId=12) {
   const entries=rows.flatMap(row=>(Array.isArray(row.item.result)?row.item.result:[]).map(quote=>({quote,row,containerId})));
-  realtimeDetailItems=entries;
+  realtimeRows=rows.slice();
+  realtimeContainerId=containerId;
+  const displayEntries=realtimeSortedEntries(entries);
+  realtimeDetailItems=displayEntries;
   S.sales.realtimeQuoteItems.clear();
   const duplicateRows=new Map();
   const labels=['承运人','起运港','目的港','ETD','船名 / 航次','ETA',realtimeContainerLabel(containerId)+'海运费','单箱总价','获取时间','操作'];
-  const body=entries.map(({quote:q,row},index)=>{
+  const sortableHeaders=[['carrier','承运人'],['pol','起运港'],['pod','目的港'],['etd','ETD'],['vessel_voyage','船名 / 航次'],['eta','ETA'],['ocean_price',realtimeContainerLabel(containerId)+'海运费'],['total_price','单箱总价'],['obtained_at','获取时间']];
+  const body=displayEntries.map(({quote:q,row},index)=>{
     const identity=JSON.stringify([containerId,q.carrierName,q.pol?.terminalEnName||q.pol?.name,q.pod?.terminalEnName||q.pod?.name,q.etd,q.vessel,q.voyage,q.totalOceanPriceUsd,q.totalPrice,q.obtainDate]);
     const duplicate=duplicateRows.get(identity)||0;
     duplicateRows.set(identity,duplicate+1);
@@ -3149,7 +3199,7 @@ function realtimeRateList(rows,containerId=12) {
       +'<tr class="drow" hidden><td colspan="11"><div class="detail-grid"><div data-realtime-detail="'+index+'"></div></div></td></tr>';
   }).join('');
   const empty=rows.filter(row=>!row.item.result?.length).map(row=>'<div class="company-rate-status">'+esc(companyItemName(row.item,true))+'：暂无报价</div>').join('');
-  return (entries.length?'<table class="data-table sales-rate-table realtime-rate-table"><thead><tr>'+quoteSelectAllHeader('舱位')+labels.map(label=>'<th>'+label+'</th>').join('')+'</tr></thead><tbody>'+body+'</tbody></table>':'')+empty;
+  return (displayEntries.length?'<table class="data-table sales-rate-table realtime-rate-table"><thead><tr>'+quoteSelectAllHeader('舱位')+sortableHeaders.map(([field,label])=>realtimeSortHeader(field,label)).join('')+'<th>操作</th></tr></thead><tbody>'+body+'</tbody></table>':'')+empty;
 }
 function renderCompanyTask(kind,task) {
   const host=$(kind==='company'?'company-rate-company':'company-rate-realtime');

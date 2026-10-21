@@ -1,4 +1,6 @@
 """Pure account capabilities. Database state and HTTP details are supplied by callers."""
+import ipaddress
+
 from core.contracts import (ROLE_ADMIN, ROLE_OPERATOR, ROLE_SALES, SALES_SCOPED_GET,
     OPS_OWNERSHIP_GET, OWNERSHIP_QUERY_PARAM, OWNERSHIP_MINE, OWNERSHIP_ALL)
 
@@ -37,6 +39,20 @@ def browser_write_allowed(origin, fetch_site, host, secure=False):
     if origin:
         return origin == ("https://" if secure else "http://") + host
     return True
+
+
+def secure_transport(tls=False, peer="", forwarded_proto="", trusted_proxy_https=False):
+    """Treat an HTTPS proxy as secure only when explicitly enabled for a private peer."""
+    if tls:
+        return True
+    if not trusted_proxy_https:
+        return False
+    try:
+        if not ipaddress.ip_address(peer).is_private:
+            return False
+    except (ValueError, TypeError):
+        return False
+    return str(forwarded_proto).split(",", 1)[0].strip().lower() == "https"
 
 
 def record_in_scope(account, record):

@@ -19,8 +19,12 @@ from ops.postgres_sync import DEFAULT_ENV_FILE, load_dsn  # noqa: E402
 
 BACKUP_DIR = ROOT / "backup"
 STATUS_FILE = Path(__file__).resolve().parent / "postgres-backup-status.json"
-PG_BIN = Path(r"C:\Program Files\PostgreSQL\18\bin")
+PG_BIN = Path(os.environ.get("PG_BIN", r"C:\Program Files\PostgreSQL\18\bin" if os.name == "nt" else "/usr/bin"))
 KEEP = 7
+
+
+def pg_tool(pg_bin: Path, name: str) -> Path:
+    return pg_bin / (name + ".exe" if os.name == "nt" else name)
 
 
 def backup(env_file: Path = DEFAULT_ENV_FILE, backup_dir: Path = BACKUP_DIR,
@@ -43,7 +47,7 @@ def backup(env_file: Path = DEFAULT_ENV_FILE, backup_dir: Path = BACKUP_DIR,
     temporary = target.with_suffix(".dump.tmp")
     try:
         with temporary.open("wb") as output:
-            dump = subprocess.run([str(pg_bin / "pg_dump.exe"), "--format=custom", "--no-owner",
+            dump = subprocess.run([str(pg_tool(pg_bin, "pg_dump")), "--format=custom", "--no-owner",
                                    "--no-acl"], env=environment, stdout=output,
                                   stderr=subprocess.PIPE, timeout=300)
         if dump.returncode:
@@ -53,7 +57,7 @@ def backup(env_file: Path = DEFAULT_ENV_FILE, backup_dir: Path = BACKUP_DIR,
                     detail = detail.replace(secret, "[redacted]")
             raise RuntimeError("pg_dump failed: " + detail[:300])
         with temporary.open("rb") as archive:
-            listing = subprocess.run([str(pg_bin / "pg_restore.exe"), "--list"], stdin=archive,
+            listing = subprocess.run([str(pg_tool(pg_bin, "pg_restore")), "--list"], stdin=archive,
                                      capture_output=True, check=True, timeout=60)
         if not temporary.stat().st_size or b"TABLE DATA public" not in listing.stdout:
             raise RuntimeError("PostgreSQL backup archive is empty or missing table data")

@@ -6,7 +6,6 @@
   var error = document.getElementById("error");
   var content = document.getElementById("content");
   var version = document.getElementById("version");
-  var signature = document.getElementById("signature");
   var requirements = document.getElementById("requirements");
   var size = document.getElementById("size");
   var published = document.getElementById("published");
@@ -47,14 +46,10 @@
     error.hidden = false;
     error.textContent = message || "客户端安装包暂不可用";
     version.textContent = "暂不可下载";
-    signature.hidden = true;
   }
 
   function render(data) {
     version.textContent = "版本 " + data.version;
-    signature.hidden = false;
-    signature.className = "signature " + data.signature;
-    signature.textContent = data.signature === "signed" ? "已签名安装包" : "未签名安装包";
     requirements.textContent = data.minimumWindows;
     size.textContent = formatBytes(data.sizeBytes);
     published.textContent = formatDate(data.publishedAt);

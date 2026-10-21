@@ -41,6 +41,6 @@ npm.cmd run package:formal -- -DownloadsRoot "C:/Users/YQN/Documents/正式版�
 ## 边界
 
 - 下载页公开只读，当前不校验 Prospector 产品权限。
-- 安装包签名状态必须如实写入清单；未签名包不能因页面展示而被描述为已签名。
+- 安装包签名状态必须如实写入清单；当前页面不展示签名标签，发布与审计仍以清单字段为准。
 - 若 Navigator 后续成为正式自动更新源，需另接 `latest.yml`、blockmap 和 Electron updater 验证，不能只替换下载页。
 

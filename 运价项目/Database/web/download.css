@@ -79,7 +79,7 @@ h1 {
   align-items: center;
 }
 
-.version, .signature {
+.version {
   min-height: 30px;
   padding: 5px 10px;
   border: 1px solid #c8d5dc;
@@ -88,9 +88,6 @@ h1 {
   color: #294958;
   font-size: 13px;
 }
-
-.signature.signed { border-color: #9bc8b6; color: #08634f; background: #eff9f5; }
-.signature.unsigned { border-color: #d9bd82; color: #7b5714; background: #fff9ec; }
 
 .download-panel {
   min-height: 440px;

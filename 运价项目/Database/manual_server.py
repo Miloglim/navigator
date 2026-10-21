@@ -86,7 +86,7 @@ from transport.monitoring_routes import build_monitoring_get_routes  # noqa: E40
 from core.contracts import (AUTH_STATUS_ROUTE, LIVENESS_ROUTE, CENTER_NAVIGATOR_DASHBOARD_ROUTE, ROLE_ADMIN,
                             PENDING_PRESERVE_OTHER_SOURCES, PENDING_PRESERVE_EXISTING_SOURCE_ROWS,
                             SALES_GROUP_SUMMARY_ROUTE, SALES_GROUP_VISIT_ROUTE, fail, ok)
-from services.access_policy import account_identity, session_security_changed, scoped_sales_query, browser_write_allowed
+from services.access_policy import account_identity, session_security_changed, scoped_sales_query, browser_write_allowed, secure_transport
 from ops.account_security import LoginLimiter, LoginThrottled
 from core.contracts import AUTH_REQUEST_MAX_BYTES, HTTP_REQUEST_TIMEOUT_SECONDS, HTTP_MAX_ACTIVE_REQUESTS, ROLE_OPERATOR, ROLE_SALES
 from transport.agent_routes import build_agent_post_routes
@@ -2120,7 +2120,7 @@ class Handler(BaseHTTPRequestHandler):
             c.close()
 
     def _prospector_transport_allowed(self):
-        if isinstance(self.connection, ssl.SSLSocket):
+        if self._secure_transport():
             return True
         # Explicitly approved private LAN HTTP; public peers/Host and proxy spoofing stay blocked.
         try:
@@ -2128,6 +2128,14 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             return False
         return private_http_transport(self.client_address[0], host)
+
+    def _secure_transport(self):
+        return secure_transport(
+            tls=isinstance(self.connection, ssl.SSLSocket),
+            peer=self.client_address[0],
+            forwarded_proto=self.headers.get("X-Forwarded-Proto", ""),
+            trusted_proxy_https=os.environ.get("NAVIGATOR_TRUSTED_PROXY_HTTPS") == "1",
+        )
 
     def _bearer(self):
         header = self.headers.get("Authorization", "")
@@ -2142,7 +2150,7 @@ class Handler(BaseHTTPRequestHandler):
             c.close()
 
     def _session_cookie(self, sid: str, expired: bool = False) -> Dict[str, str]:
-        secure = "; Secure" if isinstance(self.connection, ssl.SSLSocket) else ""
+        secure = "; Secure" if self._secure_transport() else ""
         return {"Set-Cookie": f"{SESSION_COOKIE}={sid}; Path=/; Max-Age={0 if expired else SESSION_TTL_SECONDS}; HttpOnly; SameSite=Strict{secure}"}
 
     def _image_allowed(self, name: str, session) -> bool:
@@ -2321,7 +2329,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(403, fail("read-only device authorization", "forbidden"))
         auth_routes = {*PROSPECTOR_POST, "/api/auth/login", "/api/auth/logout", "/api/auth/setup", ACCOUNT_PROFILE_ROUTE, GROWTH_SEARCH_ROUTE, *ACCOUNT_POST}
         if not browser_write_allowed(self.headers.get("Origin"), self.headers.get("Sec-Fetch-Site"),
-                                     self.headers.get("Host", ""), isinstance(self.connection, ssl.SSLSocket)):
+                                     self.headers.get("Host", ""), self._secure_transport()):
             return self._json(403, fail("request origin rejected", "origin_rejected"))
         if p not in auth_routes and p != "/api/import" and p not in POST_ROUTES:
             return self._json(404, {"ok": False, "error": "not found"})
@@ -2348,7 +2356,7 @@ class Handler(BaseHTTPRequestHandler):
             if p in PROSPECTOR_POST:
                 account = None
                 if p == PROSPECTOR_AUTHORIZE:
-                    expected_origin = ("https://" if isinstance(self.connection, ssl.SSLSocket) else "http://") + self.headers.get("Host", "")
+                    expected_origin = ("https://" if self._secure_transport() else "http://") + self.headers.get("Host", "")
                     if self.headers.get("Origin") != expected_origin:
                         return self._json(403, fail("same-origin consent required", "origin_rejected"))
                     account = self._session()

@@ -2,7 +2,7 @@
 
 ## 2026-10-21 Prospector 客户端下载
 
-新增公开只读下载入口：`GET /download`、`GET /api/downloads/prospector/latest`、`GET /downloads/prospector/<fileName>`。清单使用统一 `{ok,data|error}`，包含版本、文件名、大小、SHA256、发布时间、系统要求、签名状态和更新说明；文件接口只发送清单当前登记的唯一安装包，并设置附件下载与长期缓存头。下载能力不读取运价业务库、不要求 Navigator 产品权限，也不改变 Prospector OAuth 查价、自动更新中心或采集写入口。运行目录由 `NAVIGATOR_DOWNLOADS_DIR` 配置，默认 `Database/.runtime/downloads/prospector`。
+新增公开只读下载入口：`GET /download`、`GET /api/downloads/prospector/latest`、`GET /downloads/prospector/<fileName>`。清单使用统一 `{ok,data|error}`，包含版本、文件名、大小、SHA256、发布时间、系统要求、签名状态和更新说明；公开页面当前只显示版本与安装信息，不显示签名标签。文件接口只发送清单当前登记的唯一安装包，并设置附件下载与长期缓存头。下载能力不读取运价业务库、不要求 Navigator 产品权限，也不改变 Prospector OAuth 查价、自动更新中心或采集写入口。运行目录由 `NAVIGATOR_DOWNLOADS_DIR` 配置，默认 `Database/.runtime/downloads/prospector`。
 
 ## 2026-10-21 外部 Agent 标准 JSON 入口 v1
 
