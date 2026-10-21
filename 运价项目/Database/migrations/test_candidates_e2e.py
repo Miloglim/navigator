@@ -3,15 +3,15 @@
 """
 import sys, io, json, sqlite3, subprocess, urllib.request
 from pathlib import Path
+from e2e_guard import target
 sys.stdout.reconfigure(encoding='utf-8')
 
-DB = Path(r'C:\Users\YQN\Documents\正式版运价库\运价项目\Database\freight_manual.db')
-TOKEN = (DB.parent / "token_manual.txt").read_text(encoding='utf-8').strip()
+DB, BASE, TOKEN = target()
 
 
 def post(path, body):
     req = urllib.request.Request(
-        'http://127.0.0.1:8795' + path,
+        BASE + path,
         data=json.dumps(body, ensure_ascii=False).encode('utf-8'),
         headers={'Content-Type': 'application/json', 'x-push-token': TOKEN},
         method='POST')
@@ -20,7 +20,7 @@ def post(path, body):
 
 
 def get(path):
-    req = urllib.request.Request('http://127.0.0.1:8795' + path, headers={'x-push-token': TOKEN})
+    req = urllib.request.Request(BASE + path, headers={'x-push-token': TOKEN})
     with urllib.request.urlopen(req, timeout=10) as r:
         return json.loads(r.read().decode('utf-8'))
 
@@ -54,8 +54,7 @@ if row['check_status'] != 'failed':
 print()
 print('Step2 跑 difflib 扫描:')
 gen = subprocess.run(
-    [r'C:\Users\YQN\AppData\Local\Programs\YQN OS\runtime\python\python.exe',
-     str(Path(r'C:\Users\YQN\Documents\正式版运价库\运价项目\Database\migrations\generate_candidates.py'))],
+    [sys.executable, str(Path(__file__).resolve().parent / 'generate_candidates.py'), '--db', str(DB)],
     capture_output=True, text=True, encoding='utf-8', errors='replace')
 print(gen.stdout)
 if gen.stderr.strip():

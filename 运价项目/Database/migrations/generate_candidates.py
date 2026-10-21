@@ -16,8 +16,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=2000)
     ap.add_argument("--cutoff", type=float, default=0.75)
+    ap.add_argument("--db", type=Path, default=DB_PATH)
     args = ap.parse_args()
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = sqlite3.connect(str(args.db))
     conn.row_factory = sqlite3.Row
     try:
         stats = manualdb.scan_failed_for_candidates(conn, limit=args.limit, cutoff=args.cutoff)

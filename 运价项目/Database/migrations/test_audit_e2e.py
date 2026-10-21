@@ -1,15 +1,15 @@
 """test_audit_e2e.py — P0/P3-A 端到端：造 pending → update 改字段 → 查 edit_log → approve → 查 approve_diff + 观察流候选 → 清理"""
 import sys, io, json, sqlite3, urllib.request
 from pathlib import Path
+from e2e_guard import target
 sys.stdout.reconfigure(encoding='utf-8')
 
-DB = Path(r'C:\Users\YQN\Documents\正式版运价库\运价项目\Database\freight_manual.db')
-TOKEN = (DB.parent / "token_manual.txt").read_text(encoding='utf-8').strip()
+DB, BASE, TOKEN = target()
 
 
 def post(path, body):
     req = urllib.request.Request(
-        'http://127.0.0.1:8795' + path,
+        BASE + path,
         data=json.dumps(body, ensure_ascii=False).encode('utf-8'),
         headers={'Content-Type': 'application/json', 'x-push-token': TOKEN},
         method='POST')
@@ -18,7 +18,7 @@ def post(path, body):
 
 
 def get(path):
-    req = urllib.request.Request('http://127.0.0.1:8795' + path, headers={'x-push-token': TOKEN})
+    req = urllib.request.Request(BASE + path, headers={'x-push-token': TOKEN})
     with urllib.request.urlopen(req, timeout=10) as r:
         return json.loads(r.read().decode('utf-8'))
 

@@ -2,7 +2,7 @@
 """db_health.py —— 台账库维护与检查（只读；唯一的写操作是可选的 --vacuum，默认不执行）。
 
 维度（自己定的，原则是"台账已有的判据不重写"）：
-  A 服务与可用性    8795 是否应答、/api/stats 能否读
+  A 服务与可用性    8795 是否应答、/api/health/live 能否读（不含业务数据）
   B 全库体检        GET /api/audit → violations（标准化）/ integrity（健康度）/ master_health
   C 规模与积压      业务表行数、待审三态、最老待审等待时长
   D 主数据健康      ports/carriers/routes/port_groups/senders/chat_groups/operators 行数、
@@ -26,6 +26,7 @@ import sys
 import urllib.request
 from datetime import datetime
 from pathlib import Path
+from audit_connection import backend, connect
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -63,14 +64,94 @@ def _sql(q, args=()):
         c.close()
 
 
+def check_postgres():
+    """One enforced read-only snapshot; no SQLite files or startup migrations."""
+    import manualdb
+    import manual_server
+    items = []
+    def add(level, dim, msg, advice=""):
+        items.append(dict(level=level, dim=dim, msg=msg, advice=advice))
+    c = connect("postgres")
+    try:
+        add("PASS", "A 服务", "当前服务后端 PostgreSQL；审查事务只读")
+        master = manualdb.Master(c)
+        audit = manualdb.audit_all(c, master)
+        issues = manualdb.audit_master(c, master)
+        add("WARN" if audit.get("count") or audit.get("integrity_count") or issues.get("issues") else "PASS",
+            "B 体检", "标准化违规 %s；完整性提示 %s；主数据问题 %s" %
+            (audit.get("count", 0), audit.get("integrity_count", 0), len(issues.get("issues") or [])))
+        for issue in (issues.get("issues") or [])[:3]:
+            add("WARN", "B 主数据证据", json.dumps(issue, ensure_ascii=False))
+        for issue in audit.get("integrity") or []:
+            add("WARN", "B 完整性证据", "%s：%s" % (issue["type"], issue["count"]), issue.get("detail", ""))
+        for r in c.execute("SELECT record_type, count(*) FROM freight_items GROUP BY record_type"):
+            add("PASS", "C 规模", "%s %s 行" % (r[0], r[1]))
+        states = {r[0]: r[1] for r in c.execute("SELECT review_status,count(*) FROM pending_records GROUP BY review_status")}
+        add("PASS", "C 积压", json.dumps(states, ensure_ascii=False))
+        oldest = c.execute("SELECT min(created_at) FROM pending_records WHERE review_status='awaiting'").fetchone()[0]
+        if oldest:
+            hours = (datetime.now() - datetime.strptime(oldest[:19], "%Y-%m-%d %H:%M:%S")).total_seconds() / 3600
+            add("WARN" if hours > STALE_PENDING_H else "PASS", "C 积压", "最老待审 %.1f 小时" % hours)
+        for table in ("ports", "carriers", "routes", "port_groups", "senders", "chat_groups", "operators"):
+            n = c.execute("SELECT count(*) FROM " + table).fetchone()[0]
+            add("PASS" if n else "WARN", "D 主数据", "%s %s 行" % (table, n))
+        size = c.execute("SELECT pg_database_size(current_database())").fetchone()[0]
+        add("PASS", "E 存储", "PostgreSQL %.1f MB；不套用 SQLite WAL/碎片判据" % (size / 1e6))
+        references = {}
+        def image_ref(value, entry_id):
+            for name in manualdb.split_list(value):
+                references.setdefault(name, []).append(entry_id)
+        for r in c.execute("SELECT entry_id,image_file FROM freight_items"):
+            image_ref(r[1], r[0])
+        for r in c.execute("SELECT entry_id,payload FROM pending_records WHERE review_status='awaiting'"):
+            p = json.loads(r[1] or "{}")
+            image_ref(p.get("图片名") or p.get("运价图片") or p.get("舱位图"), r[0])
+        missing = [{"reference": name, "affected_rows": len(ids), "entry_ids": ids[:3]}
+                   for name, ids in references.items() if manual_server._resolve_image(name)[0] is None]
+        add("WARN" if missing else "PASS", "F 图片", "正式台账及待审核唯一引用 %d，无法解析 %d" % (len(references), len(missing)),
+            json.dumps(missing[:3], ensure_ascii=False) if missing else "")
+        status_file = HERE / "postgres-backup-status.json"
+        if status_file.is_file():
+            status = json.loads(status_file.read_text(encoding="utf-8"))
+            backup = Path(status.get("path") or "")
+            present = status.get("ok") and backup.is_file() and backup.stat().st_size == status.get("bytes")
+            age = (datetime.now() - datetime.fromisoformat(status["created_at"])).total_seconds() / 86400 if present else None
+            add("PASS" if present and age <= STALE_SNAPSHOT_D else "WARN", "G 备份",
+                "PostgreSQL 最近备份 %.1f 天前；仅核对状态与文件，未做恢复演练" % age if present else "最新备份状态或文件校验失败")
+        else:
+            add("WARN", "G 备份", "没有 PostgreSQL 备份状态证据")
+        if WM.is_file():
+            wm = json.loads(WM.read_text(encoding="utf-8"))
+            ages = [(datetime.now() - datetime.strptime(t, "%Y-%m-%d %H:%M:%S")).total_seconds() / 3600 for t in wm.values()]
+            stale = sum(age > STALE_WM_H for age in ages)
+            add("WARN" if stale else "PASS", "G 时效", "%d 群水位，%d 群超过 %d 小时；水位不能单独证明拉取完整" % (len(ages), stale, STALE_WM_H))
+        else:
+            add("WARN", "G 时效", "水位文件不可用")
+        # Reuse the spec comparison with aliases from this read-only snapshot.
+        sys.path.insert(0, str(DIFF.parent))
+        import spec_alias_diff
+        aliases = {(r[0], r[1], r[2].strip().lower()): r[3] for r in c.execute("SELECT scope_group,kind,alias,target FROM alias_scope")}
+        drift = spec_alias_diff.diff(aliases=aliases)
+        hard = len(drift.get("broken_links") or []) + len(drift.get("target_mismatch") or [])
+        add("WARN" if hard or drift.get("only_in_spec") else "PASS", "H 规范",
+            "冲突/断链 %d；规范待登记 %d" % (hard, len(drift.get("only_in_spec") or [])))
+        return dict(generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"), backend="postgres",
+                    db="PostgreSQL (current service)", items=items, image_missing=missing,
+                    fail=sum(x["level"] == "FAIL" for x in items), warn=sum(x["level"] == "WARN" for x in items))
+    finally:
+        c.close()
+
+
 def check():
+    if backend() == "postgres":
+        return check_postgres()
     items = []          # (级别, 维度, 结论, 建议)
 
     def add(level, dim, msg, advice=""):
         items.append({"level": level, "dim": dim, "msg": msg, "advice": advice})
 
     # A 服务
-    stats, err = _get("/api/stats")
+    stats, err = _get("/api/health/live")
     if stats is None:
         add("FAIL", "A 服务", "台账服务不可达（%s）" % err,
             "双击「运价看板-启动并打开.bat」；起不来就看 manual.log 尾部")
@@ -238,6 +319,11 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="台账库维护与检查（只读）")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()
-    rep = check()
+    try:
+        rep = check()
+    except Exception as exc:
+        # Never expose connection credentials or report a false empty ledger.
+        rep = {"generated_at": datetime.now().isoformat(), "fail": 1, "warn": 0,
+               "items": [{"level": "FAIL", "dim": "审查", "msg": "审查失败，未回退旧库：" + type(exc).__name__, "advice": "检查服务及只读数据库连接"}]}
     print(json.dumps(rep, ensure_ascii=False, indent=1) if a.json else human(rep))
     sys.exit(rep.get("fail", 0))

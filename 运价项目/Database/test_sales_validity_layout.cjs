@@ -1,0 +1,15 @@
+const fs=require('fs'),assert=require('assert');
+const source=fs.readFileSync('web/index.html','utf8');
+assert.match(source,/th:nth-child\(4\) \{ width:88px; \}/);
+assert.match(source,/th:nth-child\(5\) \{ width:120px; \}/);
+assert.match(source,/qrow > td:nth-child\(5\) \{ padding-left:16px; \}/);
+assert.match(source,/sales-validity-cell[^}]*display:block/);
+assert.match(source,/sales-validity-cell\.ai-validity \.sales-validity:not\(\.sales-validity-future\)[^}]*color:#6f42c1/);
+assert.match(source,/sales-validity-cell \.sales-validity\.sales-validity-future[^}]*color:#8196aa/);
+assert.match(source,/sales-rate-table \.qrow > td > \.sales-validity-cell \{[^}]*display:block[^}]*white-space:normal/);
+assert.match(source,/var aiTitle=q\.ai_flag\?[^;]*AI按兜底规则推断/);
+assert.ok(!source.includes('writing-mode:vertical-rl'));
+assert.ok(!source.includes('qrow > td:nth-child(5) { border-left:1px solid var(--border);'));
+assert.ok(source.includes('class="sales-validity-cell\'+aiValidity+\'"'));
+assert.ok(!source.includes('>AI识别</span>'));
+console.log('PASS: future-effective validity stays gray; AI validity is purple only otherwise.');

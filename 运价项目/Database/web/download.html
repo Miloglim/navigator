@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>下载 Milogin's Prospector</title>
+  <link rel="stylesheet" href="/assets/download.css">
+</head>
+<body>
+  <header class="download-header">
+    <a class="brand" href="/">Milogin Navigator</a>
+    <span class="channel">Windows 客户端</span>
+  </header>
+
+  <main class="download-main">
+    <section class="download-intro" aria-labelledby="download-title">
+      <p class="eyebrow">PROSPECTOR</p>
+      <h1 id="download-title">Milogin's Prospector.</h1>
+      <p class="summary">货代销售客户开发与跟进桌面端</p>
+      <div class="version-row">
+        <span id="version" class="version">正在读取版本</span>
+        <span id="signature" class="signature" hidden></span>
+      </div>
+    </section>
+
+    <section class="download-panel" aria-live="polite">
+      <div id="loading" class="state">正在读取安装包信息</div>
+      <div id="error" class="state state-error" hidden></div>
+      <div id="content" hidden>
+        <dl class="metadata">
+          <div><dt>系统要求</dt><dd id="requirements"></dd></div>
+          <div><dt>安装包大小</dt><dd id="size"></dd></div>
+          <div><dt>发布时间</dt><dd id="published"></dd></div>
+          <div class="checksum-row"><dt>SHA256</dt><dd><code id="sha256"></code><button id="copy-sha" type="button">复制</button></dd></div>
+        </dl>
+
+        <a id="download-link" class="download-button" href="#" download>下载 Windows 客户端</a>
+
+        <div class="notes-block">
+          <h2>更新说明</h2>
+          <ul id="notes"></ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <noscript><p class="noscript">需要启用 JavaScript 才能读取安装包信息。</p></noscript>
+  <script src="/assets/download.js"></script>
+</body>
+</html>
+

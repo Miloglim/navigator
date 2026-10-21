@@ -1,0 +1,13 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>授权 Prospector 查询 Navigator</title>
+<style>body{font:16px system-ui;max-width:480px;margin:8vh auto;padding:24px;color:#142033}input,button{box-sizing:border-box;display:block;width:100%;padding:12px;margin:12px 0;font:inherit}button{cursor:pointer}#error{color:#ad2831}</style>
+<h1>授权 Prospector</h1><p>允许 Prospector 以你的账号查询运价、舱位和报价原图。此授权只允许读取。</p>
+<form id="login"><label>Navigator 账号<input id="name" autocomplete="username" required></label><label>密码<input id="password" type="password" autocomplete="current-password" required></label><button>登录 Navigator</button></form>
+<p id="identity"></p><button id="consent" hidden>确认授权 Prospector</button><p id="error" role="alert"></p>
+<script>
+const parameters=Object.fromEntries(new URLSearchParams(location.search));
+async function request(path,body){const response=await fetch(path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});const result=await response.json();if(!response.ok||!result.ok)throw Error(result.error||'请求失败');return result;}
+async function status(){const result=await request('/api/auth/status');const user=result.user;if(user){if(user.must_change_password)throw Error('请先在 Navigator 修改密码，再重新授权');document.getElementById('login').hidden=true;document.getElementById('identity').textContent='当前账号：'+(user.display_name||user.name);document.getElementById('consent').hidden=false;}}
+document.getElementById('login').onsubmit=async event=>{event.preventDefault();try{await request('/api/auth/login',{name:document.getElementById('name').value,password:document.getElementById('password').value});document.getElementById('password').value='';await status();}catch(error){document.getElementById('error').textContent=error.message;}};
+document.getElementById('consent').onclick=async()=>{try{const result=await request('/api/prospector/authorize',parameters);location.assign(result.data.redirect_url);}catch(error){document.getElementById('error').textContent=error.message;}};
+status().catch(error=>{document.getElementById('error').textContent=error.message;});
+</script></html>

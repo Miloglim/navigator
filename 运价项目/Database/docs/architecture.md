@@ -1,7 +1,7 @@
 # 运价台账系统 · 架构与技术方案（人话版）
 
 > 范围：`运价项目` 里的**运价台账（Database）** + **运价心跳采集器（freight-rate-heartbeat skill）**。
-> 最后更新：2026-09-11
+> 最后更新：2026-10-21
 
 ## 一句话讲清它在干什么
 
@@ -15,7 +15,11 @@
 | 看板 | `Database/web/index.html` | 销售端（查价/折叠/历史/CSV）+ 航管端（录入/价舱管理/候选/待审核）+ 配置端（批量导入/主数据/别名/影子重放） |
 | 心跳采集器 | `freight-rate-heartbeat` skill（`scripts/`） | 读钉钉群 → 抽字段 → 只调 `POST /api/pending` 把数据递到待审核 |
 
-三块之间**只有一个连接点**：HTTP 接口 + 一份传入契约 `docs/agent-input-contract.md`。skill 不碰库文件、不写 SQL，只发中文字段的 JSON。
+三块之间**只有一个连接点**：HTTP 接口 + 一份传入契约 `docs/agent-input-contract.md`。本机采集 skill 不碰库文件、不写 SQL，只发中文字段的 JSON；外部解析 Agent 使用独立的 `POST /api/agent/intake/v1` Bearer 入口，服务端复用同一待审核实现。
+
+## 中心账号迁移预览边界（2026-10-18）
+
+`ops/account_mapping_preview.py` 是迁移前的只读工具。它使用 PostgreSQL 只读事务读取 `operators`，只输出账号映射审阅所需的非敏感字段；迁移范围限定为邮箱格式登录名，所有非邮箱账号（包括旧管理员）标记为 `out_of_scope`，管理员统一使用中心账号库的超级管理员账号。迁移目标显示名沿用旧值，旧值为空时使用登录邮箱，并显式标记自动补全。`--output <path>` 只能保存同样不含密码摘要、会话和 Token 的 JSON 清单。该工具不创建中心账号、不写映射表、不切换登录，也不把预览状态当作迁移结果。
 
 ## 数据从群到库的主链路（心跳）
 
@@ -38,7 +42,7 @@
 - **闸门表**：`pending_records`（agent/导入先落这里，带 `check_status`/`errors`/`action`）。
 - **权限表**：`operators`（航管负责航线/群 + 匹配模式）、`chat_groups`（群可见性）。
 
-**值的硬规范（进库前必须满足）**：起运港/目的港/船司/航线要么命中主数据要么留空；价格/天数一律非负整数；有效期是 ISO 日期；柜型只三档、舱位类型只八档；`消息原文` 逐字（引用回复自带引用块）；`origin=agent` 时 `消息时间` 保留传入的真值。命中不了的 → 打回 `failed` 进待审核交人工，**不污染业务表**。
+**值的硬规范（进库前必须满足）**：起运港/目的港/船司/航线要么命中主数据要么留空；价格/天数一律非负整数；有效期是 ISO 日期；柜型四档、舱位类型十一档；`消息原文` 逐字（引用回复自带引用块）；`origin=agent` 时 `消息时间` 保留传入的真值。命中不了的 → 打回 `failed` 进待审核交人工，**不污染业务表**。
 
 ## 为什么这么设计（技术方案的取舍）
 
@@ -66,6 +70,7 @@
 | `GET /api/master?full=1` | 读 | 主数据合法值（归一以它为准） |
 | `POST /api/validate` | 只读预检 | 每条 `{ok, resolved, errors}`，不写库 |
 | `POST /api/pending` | **唯一写入口** | agent/导入进待审核（`kind`\|`table` 都可） |
+| `POST /api/agent/intake/v1` | 外部 Agent 写入口 | 版本化标准 JSON，独立 Bearer Token，仍进待审核 |
 | `GET/POST /api/pending…` `approve`/`reject`/`delete` | 人工 | 待审核页放行/驳回/删 |
 | `POST /api/push` `/api/record/*` `/api/master/save` | 人工/维护 | 航管端录入、留痕、主数据维护（agent 不碰） |
 | `GET /api/audit` | 读 | 全库标准化体检（审查 agent 用） |
@@ -74,3 +79,12 @@
 ## 演进（现状为何这样）
 
 早期版本的投递目标已整体退役——**唯一写入对象是运价台账 `/api/pending`**，归一/校验交给台账 `Master`。采集 / 模板 / 水位 / 识图缓存这些"能力"原样保留，只是换了投递对象，并陆续补上"消息原文附带引用（带 mID）""船名 ≠ 船司（共船/VSA）""有效期兜底窗 + AI判断""数据审查 agent"等口径。
+
+## Prospector 局域网授权传输（2026-10-10）
+
+用户批准继续使用现有 HTTP 8795，不部署证书。`core/prospector_contracts.py` 定义允许的私有 IP 网段，`services/prospector_auth.py` 纯函数校验实际 peer 和 Host，`manual_server.py` 调度传输闸门，不信任代理声明。保留 PKCE、账号授权、设备只读权限与用户查询留痕；此方式不提供传输加密，仅用于受信任局域网。
+
+桌面匹配候选复用已有 compact master，仅通过 /api/prospector/options 暴露港口/港群/船司/航线；match=web 直接复用 manualdb 的网页筛选分支，禁止在客户端维护第二份港群展开事实。
+## 2026-10-18 账号迁移只读预览
+
+`ops/account_mapping_preview.py` 是迁移前只读工具，使用受控 PostgreSQL 配置并强制 `default_transaction_read_only=on`。它只输出账号映射所需的非秘密字段和审计状态，不读取或打印密码摘要、会话、Token。账号迁移必须先经过预览与人工确认，不能从显示名推断同一账号。

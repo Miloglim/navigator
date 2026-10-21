@@ -1,0 +1,205 @@
+:root {
+  color: #142b3b;
+  background: #edf1f4;
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  font-size: 15px;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { min-height: 100%; }
+body { margin: 0; background: #edf1f4; color: #142b3b; }
+a { color: inherit; }
+button, a { -webkit-tap-highlight-color: transparent; }
+
+.download-header {
+  min-height: 64px;
+  padding: 0 max(24px, calc((100vw - 1120px) / 2));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid #cdd8df;
+  background: #f8fafb;
+}
+
+.brand {
+  color: #173b53;
+  font-size: 17px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.channel {
+  color: #5e7180;
+  font-size: 13px;
+}
+
+.download-main {
+  width: min(1120px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 72px 0 48px;
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(430px, 1.1fr);
+  gap: 64px;
+  align-items: start;
+}
+
+.download-intro { padding-top: 18px; }
+.eyebrow {
+  margin: 0 0 18px;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+h1 {
+  margin: 0;
+  color: #102c3f;
+  font-size: 64px;
+  line-height: 1.04;
+  font-weight: 720;
+  letter-spacing: 0;
+}
+
+.summary {
+  max-width: 480px;
+  margin: 22px 0 0;
+  color: #506674;
+  font-size: 18px;
+  line-height: 1.65;
+}
+
+.version-row {
+  margin-top: 34px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.version, .signature {
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid #c8d5dc;
+  border-radius: 6px;
+  background: #f8fafb;
+  color: #294958;
+  font-size: 13px;
+}
+
+.signature.signed { border-color: #9bc8b6; color: #08634f; background: #eff9f5; }
+.signature.unsigned { border-color: #d9bd82; color: #7b5714; background: #fff9ec; }
+
+.download-panel {
+  min-height: 440px;
+  padding: 30px;
+  border: 1px solid #cbd7de;
+  border-radius: 8px;
+  background: #fbfcfd;
+  box-shadow: 0 12px 32px rgba(34, 59, 74, 0.08);
+}
+
+.state {
+  min-height: 120px;
+  display: grid;
+  place-items: center;
+  color: #647986;
+  text-align: center;
+}
+
+.state-error { color: #a33b35; }
+
+.metadata { margin: 0; }
+.metadata > div {
+  min-height: 56px;
+  padding: 12px 0;
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+  border-bottom: 1px solid #e1e8ec;
+}
+.metadata dt { color: #6a7d88; font-size: 13px; }
+.metadata dd { min-width: 0; margin: 0; color: #1d3a4b; }
+
+.checksum-row dd { display: flex; gap: 8px; align-items: center; }
+.checksum-row code {
+  min-width: 0;
+  overflow: hidden;
+  color: #3f5867;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checksum-row button {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border: 1px solid #bfccd3;
+  border-radius: 4px;
+  background: #fff;
+  color: #345260;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.download-button {
+  min-height: 52px;
+  margin-top: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #0b5e55;
+  border-radius: 6px;
+  background: #0f766e;
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background 120ms ease, transform 120ms ease;
+}
+.download-button:hover { background: #0b685f; }
+.download-button:active { transform: translateY(1px); }
+.download-button[aria-disabled="true"] { pointer-events: none; opacity: 0.55; }
+
+.notes-block { margin-top: 28px; }
+.notes-block h2 {
+  margin: 0 0 12px;
+  color: #284553;
+  font-size: 14px;
+  font-weight: 700;
+}
+.notes-block ul { margin: 0; padding-left: 20px; color: #526a76; line-height: 1.7; }
+.notes-block li + li { margin-top: 4px; }
+
+.noscript {
+  margin: 0;
+  padding: 16px;
+  color: #8a322d;
+  text-align: center;
+}
+
+@media (max-width: 860px) {
+  .download-main {
+    width: min(680px, calc(100% - 32px));
+    padding-top: 42px;
+    grid-template-columns: 1fr;
+    gap: 34px;
+  }
+  .download-intro { padding-top: 0; }
+  h1 { font-size: 48px; }
+}
+
+@media (max-width: 520px) {
+  .download-header { padding: 0 16px; }
+  .download-main { width: calc(100% - 24px); padding: 28px 0; gap: 24px; }
+  .summary { font-size: 16px; }
+  .download-panel { min-height: 380px; padding: 20px; }
+  h1 { font-size: 40px; }
+  .metadata > div { grid-template-columns: 82px minmax(0, 1fr); gap: 10px; }
+  .checksum-row code { max-width: 150px; }
+}
+

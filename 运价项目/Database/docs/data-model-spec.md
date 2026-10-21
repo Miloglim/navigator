@@ -102,7 +102,7 @@ ports.name ──┬── route（子线，可多值：Balboa = 中美洲,加�
                         POST /api/pending ──▶ expand_cn 多维展开
                         （船司多值拆 N 条 · 柜型逐档配价 · 群名一条不拆）
                                       ▼
-                        validate_record 闸门：识别名→规范名 · 三档柜型 · 十一档舱位类型
+                        validate_record 闸门：识别名→规范名 · 四档柜型 · 十一档舱位类型
                         · 占位符视为空 · 说明词挡下 · 未知船司自动补主键(带溯源)
                                       ▼
                         pending_records（待审，人工放行才继续）

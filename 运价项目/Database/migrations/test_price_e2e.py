@@ -1,15 +1,14 @@
 """test_price_e2e.py — 端到端测价格纠错：走 /api/pending 提交一批含异常价，看"备注"前缀"""
 import sys, io, json, urllib.request
+from pathlib import Path
+from e2e_guard import target
 sys.stdout.reconfigure(encoding='utf-8')
-sys.path.insert(0, r'C:\Users\YQN\Documents\正式版运价库\运价项目\Database')
-
-with open(r'C:\Users\YQN\Documents\正式版运价库\运价项目\Database\token_manual.txt', encoding='utf-8') as f:
-    TOKEN = f.read().strip()
+DB, BASE, TOKEN = target()
 
 
 def post(path, body):
     req = urllib.request.Request(
-        'http://127.0.0.1:8795' + path,
+        BASE + path,
         data=json.dumps(body, ensure_ascii=False).encode('utf-8'),
         headers={'Content-Type': 'application/json', 'x-push-token': TOKEN},
         method='POST')
@@ -18,7 +17,7 @@ def post(path, body):
 
 
 def get(path):
-    req = urllib.request.Request('http://127.0.0.1:8795' + path, headers={'x-push-token': TOKEN})
+    req = urllib.request.Request(BASE + path, headers={'x-push-token': TOKEN})
     with urllib.request.urlopen(req, timeout=10) as r:
         return json.loads(r.read().decode('utf-8'))
 
@@ -44,7 +43,7 @@ ids = res.get('ids') or []
 
 # 直连 SQLite 按 ids 精确定位（避免 /api/pending 分页丢最新）
 import sqlite3
-conn = sqlite3.connect(r'C:\Users\YQN\Documents\正式版运价库\运价项目\Database\freight_manual.db')
+conn = sqlite3.connect(str(DB))
 conn.row_factory = sqlite3.Row
 placeholders = ",".join("?" * len(ids))
 rows = list(conn.execute(f"SELECT id, payload FROM pending_records WHERE id IN ({placeholders})", ids))

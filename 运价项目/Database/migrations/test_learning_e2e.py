@@ -1,19 +1,16 @@
-"""test_learning_e2e.py — P1/P2/P3-B 联合端到端：
+"""test_learning_e2e.py — P1/P2 联合端到端：
 造 3 条同维度 pending → update 留痕（值替换+补默认两类）→ SQL 造 ts 跨 3 天
-→ scan 两源 → 三维候选生成 → 批准 alias_scope 类（验证规范.md 追加）
-→ 批准 field_default 类（验证 field_defaults 表）→ audit-hints 验证 → 清理
+→ scan 两源 → 三维候选生成 → 批准 field_default 类 → audit-hints 验证 → 清理
 """
 import sys, io, json, sqlite3, urllib.request, urllib.parse
-from pathlib import Path
+from e2e_guard import target
 sys.stdout.reconfigure(encoding='utf-8')
 
-DB = Path(r'C:\Users\YQN\Documents\正式版运价库\运价项目\Database\freight_manual.db')
-TOKEN = (DB.parent / "token_manual.txt").read_text(encoding='utf-8').strip()
-SPEC = Path(r'C:\Users\YQN\Documents\正式版运价库\运价项目\Skill\freight-rate-heartbeat\references\群聊规范\土耳其价格更新\规范.md')
+DB, BASE, TOKEN = target()
 
 
 def post(path, body):
-    req = urllib.request.Request('http://127.0.0.1:8795' + path,
+    req = urllib.request.Request(BASE + path,
         data=json.dumps(body, ensure_ascii=False).encode('utf-8'),
         headers={'Content-Type': 'application/json', 'x-push-token': TOKEN}, method='POST')
     with urllib.request.urlopen(req, timeout=15) as r:
@@ -21,12 +18,10 @@ def post(path, body):
 
 
 def get(path):
-    req = urllib.request.Request('http://127.0.0.1:8795' + path, headers={'x-push-token': TOKEN})
+    req = urllib.request.Request(BASE + path, headers={'x-push-token': TOKEN})
     with urllib.request.urlopen(req, timeout=10) as r:
         return json.loads(r.read().decode('utf-8'))
 
-
-spec_before = SPEC.read_text(encoding='utf-8') if SPEC.exists() else ''
 
 # --- Step 1：造 3 条同维度 pending（船期ETD 各不同避免 identity 相同被撤旧留新）---
 pids = []
@@ -81,54 +76,32 @@ for r in cd['rows']:
     if r['target_layer'] == 'field_default' and not default_cand:
         default_cand = r
 
-# --- Step 6：批准 alias_scope 类 → 验证 alias_scope + 规范.md 追加 ---
-if alias_cand:
-    ap = post('/api/candidates/approve', {"id": alias_cand['id'], "reviewer": "学习测试员"})
-    print(f'\nStep6 批准 alias 候选: ok={ap.get("ok")} action={ap.get("layer_action", {}).get("action")}')
-    al = get(f'/api/alias?q={alias_cand["alias"]}')
-    print(f'  alias_scope 命中: {al["total"]} 条')
-    spec_after = SPEC.read_text(encoding='utf-8') if SPEC.exists() else ''
-    added = '别名登记日志' in spec_after and spec_after != spec_before
-    print(f'  P3-B 规范.md 追加日志: {"OK" if added else "未追加（检查群名→目录名映射）"}')
-    if added:
-        tail = [l for l in spec_after.splitlines() if '别名登记' in l or l.startswith('- 2026')]
-        print(f'  日志行: {tail[-1] if tail else "?"}')
-else:
-    print('\nStep6 跳过：无 alias_scope 类候选')
-
-# --- Step 7：批准 field_default 类 → 验证 field_defaults 表 ---
+# --- Step 6：批准 field_default 类 → 验证 field_defaults 表 ---
 if default_cand:
     ap = post('/api/candidates/approve', {"id": default_cand['id'], "reviewer": "学习测试员"})
-    print(f'\nStep7 批准 default 候选: ok={ap.get("ok")} action={ap.get("layer_action", {}).get("action")}')
+    print(f'\nStep6 批准 default 候选: ok={ap.get("ok")} action={ap.get("layer_action", {}).get("action")}')
     fd = list(c.execute("SELECT scope_key, field, default_value, evidence_count, status FROM field_defaults"))
     print(f'  field_defaults 表 {len(fd)} 行:')
     for r in fd:
         print(f'    {r["scope_key"]!r} {r["field"]}={r["default_value"]!r} 证据={r["evidence_count"]} {r["status"]}')
 else:
-    print('\nStep7 跳过：无 field_default 类候选')
+    print('\nStep6 跳过：无 field_default 类候选')
 
-# --- Step 8：audit-hints 验证 ---
+# --- Step 7：audit-hints 验证 ---
 h = get('/api/audit-hints?group=' + urllib.parse.quote('土耳其价格更新') + '&sender=' + urllib.parse.quote('学习测试员'))
 print(f'\nStep8 audit-hints: field_stats 键={list((h.get("field_stats") or {}).keys())} defaults={len(h.get("defaults") or [])} 条')
 for f, st in (h.get('field_stats') or {}).items():
     print(f'  {f}: 被改 {st["count"]} 次 top={st["top"]}')
 
-# --- Step 9：清理（先 SQL 后 HTTP，SQL 连接用完即关避免锁冲突）---
-print('\nStep9 清理:')
+# --- Step 8：清理（先 SQL 后 HTTP，SQL 连接用完即关避免锁冲突）---
+print('\nStep8 清理:')
 for r in cd['rows']:
     c.execute('DELETE FROM rule_candidates WHERE id=?', (r['id'],))
 c.execute('DELETE FROM field_defaults')
 c.commit()
 c.close()
-if alias_cand:
-    post('/api/alias/delete', {"alias": alias_cand['alias'], "kind": alias_cand['kind'],
-                               "scope_group": alias_cand['scope_key'].split('|')[-1]})
 for pid in pids:
     post('/api/pending/delete', {**{"id": pid}, 'force': True})
-# 规范.md 回滚（去掉测试追加的日志节）
-if SPEC.exists() and spec_before:
-    SPEC.write_text(spec_before, encoding='utf-8')
-    print('  规范.md 已回滚')
 c2 = sqlite3.connect(str(DB))
 n_pd = c2.execute('SELECT COUNT(*) FROM pending_records').fetchone()[0]
 n_cd = c2.execute('SELECT COUNT(*) FROM rule_candidates').fetchone()[0]

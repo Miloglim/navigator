@@ -49,3 +49,25 @@
 - `origin` = **NOT NULL DEFAULT 'manual'**（本库是人工台账；`heartbeat` 是云端旧版遗留值，不要带回）。
 - 内容指纹 `content_key` UNIQUE 幂等；留痕 `supersedes` 指回旧行、旧行标 `status='已被覆盖'`。
 - 每张业务表 `supersedes` 只留**一个**索引（历史上曾有重复，已清）。
+
+## 6. 统一条目 ID（看板 → agent 的定位协议，2026-09-28）
+
+待审核、正式台账、销售端和航管端统一使用持久化字段 `entry_id`。新条目格式为 `frt_` 加 32 位小写十六进制字符；同一条记录从待审核放行到正式台账，`entry_id` 不变。用户把这个完整编号粘给 agent，即可直接定位，不需要先猜 pending 数字 ID 或 `content_key` 前缀。
+
+| 位置 | 查询方式 | 说明 |
+|---|---|---|
+| 待审核 | `GET /api/pending?entry_id=frt_...` 或 `SELECT * FROM pending_records WHERE entry_id='frt_...'` | 可继续结合 `status/kind/check` 筛选 |
+| 正式台账 | `GET /api/rates?entry_id=frt_...` 或 `GET /api/space?entry_id=frt_...` | 返回唯一正式条目 |
+| 同源消息组 | `组:<消息ID>` | 仍用于查看一条来源消息拆出的整组，不替代个体 `entry_id` |
+
+旧的 `pending_records.id`、`freight_items.id`、`content_key` 和 `消息ID` 保留用于内部兼容、幂等、溯源或整组查询；不再作为销售端/航管端对外主定位码。
+
+诊断"这条有什么问题"的顺序（别跳步）：
+
+1. **机械闸门**：`errors`（JSON 数组，`field/input/msg` 逐条）——"目的港「X」不在主数据""柜型只三档"这类就是闸门原话；
+2. **人工改动史**：`edit_log`（`{ts,actor,action,field,old,new,可带 sync_from}`）——`sync_from` 表示该值是从锚点条目批量同步来的；
+3. **归一对照**：`payload`（人工/agent 提交的中文字段版）vs `orig_payload`（agent 原始判定快照）vs `resolved`（主数据归一结果）；
+   判"这条是不是被归一改写过"用 `orig_payload ↔ payload` 对比，别拿消息原文反推；
+4. **台账行**：`status`（当前生效/当前有效/已被覆盖）、`supersedes` 指回的旧行、以及 `POST /api/audit` 的全库体检结果。
+
+码只用于定位，不用于改写：任何修改仍走既有接口（`/api/pending/update`、`/api/pending/sync`、`/api/record/revise`），强匹配字段与批量同步的护栏照常生效。

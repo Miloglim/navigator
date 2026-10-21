@@ -1,14 +1,14 @@
 """test_shadow_e2e.py — P2 影子重放端到端测：拿最近 pending id → baseline+no_alias 重放 → 看 diff → 清理"""
 import sys, io, json, urllib.request
+from e2e_guard import target
 sys.stdout.reconfigure(encoding='utf-8')
 
-with open(r'C:\Users\YQN\Documents\正式版运价库\运价项目\Database\token_manual.txt', encoding='utf-8') as f:
-    TOKEN = f.read().strip()
+_DB, BASE, TOKEN = target()
 
 
 def post(path, body):
     req = urllib.request.Request(
-        'http://127.0.0.1:8795' + path,
+        BASE + path,
         data=json.dumps(body, ensure_ascii=False).encode('utf-8'),
         headers={'Content-Type': 'application/json', 'x-push-token': TOKEN},
         method='POST')
@@ -17,7 +17,7 @@ def post(path, body):
 
 
 def get(path):
-    req = urllib.request.Request('http://127.0.0.1:8795' + path, headers={'x-push-token': TOKEN})
+    req = urllib.request.Request(BASE + path, headers={'x-push-token': TOKEN})
     with urllib.request.urlopen(req, timeout=10) as r:
         return json.loads(r.read().decode('utf-8'))
 
@@ -26,6 +26,8 @@ def get(path):
 d = get('/api/pending?limit=3')
 ids = [int(r['id']) for r in d.get('rows', [])]
 print('最近 pending ids:', ids)
+if not ids:
+    raise SystemExit('E2E fixture missing: create pending records in the isolated database first')
 
 # 重放两种 mode
 res = post('/api/shadow/replay', {'ids': ids, 'modes': ['baseline', 'no_alias']})

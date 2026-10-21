@@ -23,6 +23,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime
 from pathlib import Path
+from audit_connection import backend, connect, duplicate_key
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -36,7 +37,7 @@ TOP_N = 10
 def classify(field, msg):
     m = msg or ""
     if "不在主数据" in m or "不在港口" in m:
-        return "主数据缺口"
+        return "主数据未匹配（需核实）"
     if "不得为空" in m:
         return "必填漏填"
     if "只三档" in m or "十一档" in m or "枚举" in m:
@@ -53,18 +54,16 @@ def classify(field, msg):
 
 
 def validate_rows(records, table):
-    """把记录丢回台账闸门重放（POST /api/validate 是预检、不写库）。服务不通就返回 None。"""
+    """在强制只读事务内复用台账校验器，不调用需授权的 HTTP 接口。"""
     if not records:
         return []
-    body = json.dumps({"table": table, "records": records}, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(BASE + "/api/validate", data=body,
-                                 headers={"Content-Type": "application/json"}, method="POST")
+    import manualdb
+    c = connect()
     try:
-        with urllib.request.urlopen(req, timeout=25) as r:
-            d = json.loads(r.read().decode("utf-8"))
-        return d.get("results") or []
-    except Exception:
-        return None
+        master = manualdb.Master(c)
+        return [manualdb.validate_record(c, master, table, record) for record in records]
+    finally:
+        c.close()
 
 
 def diff_fields(before, after):
@@ -79,12 +78,13 @@ def diff_fields(before, after):
 
 
 def review(limit):
-    if not DB.is_file():
-        return {"error": "台账库不存在：%s" % DB}
-    c = sqlite3.connect("file:%s?mode=ro" % str(DB).replace("\\", "/"), uri=True)
-    c.row_factory = sqlite3.Row
-    rows = c.execute("select * from pending_records order by id desc limit ?", (limit,)).fetchall()
-    c.close()
+    engine = backend()
+    c = connect(engine)
+    try:
+        total = c.execute("select count(*) from pending_records").fetchone()[0]
+        rows = [dict(r) for r in c.execute("select * from pending_records order by id desc limit ?", (limit,)).fetchall()]
+    finally:
+        c.close()
 
     st = collections.Counter()
     kinds = collections.Counter()
@@ -94,6 +94,8 @@ def review(limit):
     miss = collections.defaultdict(collections.Counter)     # 主数据缺口：字段 → 未命中值
     empty = collections.Counter()                            # 必填漏填：字段
     dup = collections.Counter()
+    awaiting_checks = collections.Counter()
+    error_examples = collections.defaultdict(list)
     oldest = None
     for r in rows:
         st[r["review_status"]] += 1
@@ -106,17 +108,23 @@ def review(limit):
         groups[g] += 1
         if r["review_status"] == "awaiting":
             senders[p.get("发送人") or "?"] += 1
-        dup[(g, p.get("起运港"), p.get("目的港"), p.get("柜型"), p.get("有效期船期"))] += 1
+            awaiting_checks[r["check_status"]] += 1
+        if r["review_status"] == "awaiting":
+            key = duplicate_key(r, p)
+            if key is not None:
+                dup[key] += 1
         try:
             created = datetime.strptime((r["created_at"] or "")[:19], "%Y-%m-%d %H:%M:%S")
         except ValueError:
             created = None
         if created and r["review_status"] == "awaiting" and (oldest is None or created < oldest):
             oldest = created
-        for e in json.loads(r["errors"] or "[]"):
+        for e in json.loads(r["errors"] or "[]") if r["review_status"] == "awaiting" else []:
             cls = classify(e.get("field"), e.get("msg"))
             reasons[cls] += 1
-            if cls == "主数据缺口":
+            if len(error_examples[cls]) < 3:
+                error_examples[cls].append({"entry_id": r.get("entry_id"), "field": e.get("field"), "reason": e.get("msg"), "group": g})
+            if cls == "主数据未匹配（需核实）":
                 miss[e.get("field") or "?"][str(e.get("input") or e.get("msg"))[:40]] += 1
             elif cls == "必填漏填":
                 empty[e.get("field") or "?"] += 1
@@ -128,7 +136,7 @@ def review(limit):
     for r in rows:
         if r["reviewed_by"]:
             reviewers[r["reviewed_by"]] += 1
-        if (r["edit_log"] or "").strip() not in ("", "[]", "null"):
+        if r.get("orig_payload") and (r["edit_log"] or "").strip() not in ("", "[]", "null"):
             try:
                 if diff_fields(json.loads(r["orig_payload"] or "{}"), json.loads(r["payload"] or "{}")):
                     edited.append(r)
@@ -137,6 +145,7 @@ def review(limit):
             except Exception:
                 traced_only += 1
     learning = {"edited_rows": len(edited), "traced_only": traced_only,
+                "scope": "所有有字段差异的修订，包含人工及Agent；通过率仅为当前规则机械重放，不代表业务正确率",
                 "field_changes": collections.Counter(),
                 "before_pass": None, "after_pass": None, "note": ""}
     if edited:
@@ -162,7 +171,7 @@ def review(limit):
                 continue
             rb = validate_rows([before_recs[i] for i in idx], tbl)
             ra = validate_rows([after_recs[i] for i in idx], tbl)
-            if rb is None or ra is None:
+            if rb is None or ra is None or len(rb) != len(idx) or len(ra) != len(idx):
                 learning["note"] = "台账服务不可达，改前/改后正确率这次算不出来（其余维度不受影响）"
                 break
             res_b += rb
@@ -181,25 +190,24 @@ def review(limit):
     if waited is not None and waited > STALE_HOURS:
         advice.append("最老一条待审已等 %.1f 小时（阈值 %d）：积压是时效的真终点，先清最老的一批，"
                       "别让「拉到」变成「堆着」" % (waited, STALE_HOURS))
-    if reasons.get("主数据缺口"):
+    if reasons.get("主数据未匹配（需核实）"):
         tops = []
         for f, cnt in miss.items():
             for val, n in cnt.most_common(3):
                 tops.append("%s「%s」×%d" % (f, val, n))
-        advice.append("主数据缺口 %d 次，是最划算的一次性修复：补完这些值，同类 failed 立刻消失 → %s；"
-                      "去「配置端 → 库管理」补录，或先跑候选扫描让它自动提候选"
-                      % (reasons["主数据缺口"], "；".join(tops[:6])))
+        advice.append("主数据未匹配 %d 次：%s；先核实原文与既有别名。USD等非港口值不能新增为港口，真实缺口才补主数据。"
+                      % (reasons["主数据未匹配（需核实）"], "；".join(tops[:6])))
     if reasons.get("必填漏填"):
-        advice.append("必填漏填 %d 次（%s）：这是判定层的问题，不是主数据问题 → 在对应群规范里加一条硬要求，"
-                      "并确认 check_llm_out 已把它列为 ✗ 错误"
+        advice.append("必填漏填 %d 次（%s）：核对原文是字段漏提、操作通知还是仅附加费；"
+                      "已有规则先查实现，不重复追加规范，不猜价格或柜型"
                       % (reasons["必填漏填"], "、".join("%s×%d" % (k, v) for k, v in empty.most_common(4))))
     if reasons.get("枚举越界") or reasons.get("脏格式（说明文字混进港口）"):
         advice.append("枚举越界 %d 次 / 脏格式 %d 次：前者改契约措辞，后者属规范里的「服务码不进港口字段」，"
                       "看是哪几个群集中出错再决定改哪份规范"
                       % (reasons.get("枚举越界", 0), reasons.get("脏格式（说明文字混进港口）", 0)))
     if dup_groups:
-        advice.append("重复报价 %d 组共 %d 条（同群同 POL/POD/柜型/有效期）：人工可以成批处理，"
-                      "看板折叠视图会自动只显当前价，不必逐条放行"
+        advice.append("完全相同的待审载荷 %d 组共 %d 条（同来源且全部字段一致）：仅为重复候选，"
+                      "须核对来源与留痕后处理，不自动删除或放行"
                       % (len(dup_groups), sum(dup_groups.values())))
     bad_rev = sum(n for k, n in reviewers.items() if not k or k.lower() in ("unknown", "none", "?"))
     if bad_rev:
@@ -207,7 +215,7 @@ def review(limit):
                       "看板顶栏先选身份再放行，脚本调用要带 reviewed_by" % bad_rev)
     if learning["edited_rows"]:
         if learning["before_pass"] is not None:
-            advice.append("人工编辑 %d 行：改前通过率 %.1f%% → 改后 %.1f%%（重放同一套闸门，n=%d）；"
+            advice.append("字段修订 %d 行（含人工及Agent）：当前规则下改前通过率 %.1f%% → 改后 %.1f%%（n=%d，不代表业务正确率）；"
                           "最常改的字段 %s —— 高频改动字段说明规范或契约该补话术"
                           % (learning["edited_rows"], learning["before_pass"], learning["after_pass"],
                              learning.get("n"), "、".join("%s×%d" % kv for kv in
@@ -219,8 +227,13 @@ def review(limit):
     if not advice:
         advice.append("没有触发任何阈值")
 
-    return {"generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "scanned": len(rows),
+    return {"generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "backend": engine,
+            "total_records": total, "truncated": total > len(rows), "scanned": len(rows),
+            "duplicate_examples": [[r.get("entry_id") or r["id"] for r in rows
+                if r["review_status"] == "awaiting" and duplicate_key(r, json.loads(r["payload"] or "{}")) == key][:3]
+                for key in list(dup_groups)[:3]],
             "review_status": dict(st), "kinds": dict(kinds),
+            "awaiting_checks": dict(awaiting_checks), "error_examples": dict(error_examples),
             "groups": dict(groups.most_common()), "awaiting_senders": dict(senders.most_common(TOP_N)),
             "error_classes": dict(reasons.most_common()),
             "master_gaps": {f: dict(cnt.most_common(TOP_N)) for f, cnt in miss.items()},
@@ -245,14 +258,14 @@ def human(rep):
     for cls, n in rep["error_classes"].items():
         L.append("- %-26s %d 次" % (cls, n))
     if rep["master_gaps"]:
-        L.append("\n### 主数据缺口明细（补完即消失的 failed）")
+        L.append("\n### 主数据未匹配（须核实，不等于缺实体）")
         for f, cnt in rep["master_gaps"].items():
             L.append("- **%s**：%s" % (f, "、".join("%s×%d" % (v, n) for v, n in list(cnt.items())[:8])))
     if rep["empty_required"]:
         L.append("\n### 必填漏填明细")
         L.append("- " + "、".join("%s×%d" % kv for kv in rep["empty_required"].items()))
     lr = rep["learning"]
-    L.append("\n## 人工编辑学习（原记录 → 优化记录 → 正确率）")
+    L.append("\n## 字段修订重放（含人工及Agent，不代表业务正确率）")
     if rep.get("reviewers"):
         L.append("- 参与审核：%s" % "、".join("%s×%d" % kv for kv in rep["reviewers"].items()))
     L.append("- 真改过字段的行：%d（另有 %d 行只有放行留痕、字段没变，不计入学习样本）"
@@ -260,12 +273,13 @@ def human(rep):
     if lr["before_pass"] is not None:
         L.append("- 改前通过率 **%.1f%%** → 改后 **%.1f%%**（n=%d，重放 /api/validate 同一套闸门）"
                  % (lr["before_pass"], lr["after_pass"], lr.get("n", 0)))
+    L.append(lr["scope"])
     if lr["field_changes"]:
         L.append("- 最常改字段：%s" % "、".join("%s×%d" % kv for kv in lr["field_changes"].items()))
     if lr["note"]:
         L.append("- 说明：%s" % lr["note"])
     if rep["dup_groups"]:
-        L.append("\n## 重复报价：%d 组 / %d 条（可成批放行）" % (rep["dup_groups"], rep["dup_rows"]))
+        L.append("\n## 完全重复候选：%d 组 / %d 条（仅提示核对）" % (rep["dup_groups"], rep["dup_rows"]))
     L.append("\n## 建议（按性价比排）")
     for i, a in enumerate(rep["advice"], 1):
         L.append("%d. %s" % (i, a))
@@ -277,5 +291,10 @@ if __name__ == "__main__":
     ap.add_argument("--limit", type=int, default=5000)
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()
-    rep = review(a.limit)
+    try:
+        rep = review(a.limit)
+    except Exception as exc:
+        # Operational failures must never look like an empty healthy queue.
+        rep = {"ok": False, "error": "审查失败，未回退旧库", "error_type": type(exc).__name__}
     print(json.dumps(rep, ensure_ascii=False, indent=1) if a.json else human(rep))
+    sys.exit(1 if rep.get("error") else 0)

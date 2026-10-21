@@ -1,0 +1,17 @@
+{
+  "manifestVersion": 1,
+  "product": "prospector",
+  "channel": "stable",
+  "version": "0.54.0",
+  "fileName": "prospecting-email-setup-0.54.0.exe",
+  "sizeBytes": 123456789,
+  "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "publishedAt": "2026-10-21T10:00:00+08:00",
+  "minimumWindows": "Windows 10 64-bit",
+  "signature": "unsigned",
+  "notes": [
+    "客户详情同步修复",
+    "正式中心地址配置"
+  ]
+}
+

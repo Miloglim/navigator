@@ -1,0 +1,68 @@
+const {chromium}=require('playwright');
+const fs=require('fs'),assert=require('assert');
+(async()=>{
+ const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});
+ try{
+  const context=await browser.newContext({viewport:{width:1440,height:1000},permissions:['clipboard-read','clipboard-write']});
+  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.route('**/api/**',route=>route.fulfill({json:{ok:true,data:{rows:[]}}}));
+  if(process.env.QUOTE_SOURCE_OVERRIDE==='1')await page.route('http://127.0.0.1:8795/',route=>route.fulfill({contentType:'text/html',body:fs.readFileSync('web/index.html','utf8')}));
+  const open=async()=>{
+   await page.goto('http://127.0.0.1:8795/',{waitUntil:'networkidle'});
+   await page.evaluate(()=>{S.auth={user_id:'quotation-browser-fixture',role:'sales',views:['sales']};S.role='sales';applyAccountAccess();$('auth-modal').hidden=true;setCatTab(document.querySelector('#cat-tabs button[data-tab="quote"]'));});
+  };
+  await open();
+  assert.equal(await page.locator('.quote-edit-grid').count(),0);
+  await page.evaluate(()=>{quoteEditorSelect('rates',{id:'single-fixture',carrier:'PIL',pol:'Qingdao',pod:'Santos'},true);renderQuotePage();});
+  assert.equal(await page.locator('.quote-edit-grid').count(),1);
+  assert.equal(await page.locator('.quote-edit-grid tbody tr').count(),1);
+  await page.evaluate(()=>{quoteEditorLoad().rates.rows=[];quoteEditorSave();renderQuotePage();});
+  await page.evaluate(()=>{
+   quoteEditorSelect('rates',{id:'fixture',carrier:'PIL',pol:'Qingdao',pod:'Paranagua',cab:{'20GP':5400,'40HQ/HC':5600,'40NOR':4500},free_days:14,etd:'2026-10-20',transit_days:35,route:'南美东'},true);
+   quoteEditorSelect('space',{quoteSource:'realtime',carrier:'CMA',pol:'Ningbo',pod:'Santos',etd:'2026-10-21',eta:'2026-11-18',vesselVoyage:'CMA CGM SILVER / VS93',containerType:'40HQ/HC',totalOceanPriceUsd:5600,totalPrice:5900,transportMode:'直达',transitDays:28},true);renderQuotePage();
+  });
+  const tables=page.locator('.quote-edit-grid');assert.equal(await tables.count(),2);
+  assert.equal(await tables.first().locator('thead .quote-title-row th').getAttribute('colspan'),'12');
+  assert.equal(await tables.first().locator('tfoot td').count(),0);
+  assert(!await page.evaluate(()=>quotationClipboard().html.includes('REMARK')));
+  await page.locator('.quote-editor-section').nth(1).getByRole('button',{name:'添加备注',exact:true}).click();
+  await page.getByRole('textbox',{name:'舱位备注'}).fill('Space subject to confirmation.');
+  await tables.first().locator('tbody td').nth(3).fill('5500');
+  await page.locator('.quote-editor-section').first().getByRole('button',{name:'添加备注',exact:true}).click();
+  await page.getByRole('textbox',{name:'运价备注'}).fill('Rates subject to space confirmation.');
+  const header=tables.first().locator('.quote-field-row th').first();await header.hover();
+  await header.getByRole('button',{name:'右移',exact:true}).click();
+  assert.equal(await tables.first().locator('.quote-field-row th span[contenteditable]').first().innerText(),'POL');
+  await tables.first().locator('.quote-field-row th').first().hover();
+  await tables.first().locator('.quote-field-row th').first().getByRole('button',{name:'隐藏列',exact:true}).click();
+  await page.getByRole('button',{name:'显示 POL',exact:true}).click();
+  await tables.first().locator('.quote-field-row th').nth(1).hover();
+  await tables.first().locator('.quote-field-row th').nth(1).getByRole('button',{name:'拖动列',exact:true}).dragTo(tables.first().locator('.quote-field-row th').first());
+  assert.equal(await tables.first().locator('.quote-field-row th span[contenteditable]').first().innerText(),'CARRIER');
+  await page.getByRole('button',{name:'复制报价表',exact:true}).click();
+  await page.getByText('报价表已复制，可粘贴到邮件正文',{exact:true}).waitFor();
+  const clip=await page.evaluate(async()=>{const items=await navigator.clipboard.read();return Promise.all(items.map(async i=>({html:i.types.includes('text/html')?await(await i.getType('text/html')).text():''})));});
+  fs.writeFileSync('ops/reports/quotation-editor-20261015/clipboard.json',JSON.stringify(clip));
+  assert(clip.some(c=>c.html.includes('5500')&&c.html.includes('AVAILABLE SPACE')&&c.html.includes('Rates subject')));
+  assert(!clip.some(c=>c.html.includes('contenteditable')||c.html.includes('5900')));
+  const mail=await context.newPage();await mail.setContent(clip.find(c=>c.html).html);
+  assert(await mail.locator('table').first().evaluate(el=>el.getBoundingClientRect().width<=920));
+  await mail.screenshot({path:'ops/reports/quotation-editor-20261015/email-preview.png',fullPage:true});await mail.close();
+  await open();assert.equal(await tables.first().locator('tbody td').nth(3).innerText(),'5500');
+  assert.equal(await page.getByRole('textbox',{name:'运价备注'}).innerText(),'Rates subject to space confirmation.');
+  assert.equal(await tables.first().locator('tbody td').first().evaluate(el=>getComputedStyle(el).textAlign),'center');
+  await page.getByRole('textbox',{name:'舱位备注'}).fill('   ');
+  await page.getByRole('button',{name:'恢复默认格式',exact:true}).click();
+  assert.equal(await tables.nth(1).locator('tfoot').count(),0);
+  assert.equal(await tables.first().locator('tfoot td').evaluate(el=>getComputedStyle(el).textAlign),'center');
+  await page.getByRole('button',{name:'恢复默认格式',exact:true}).click();
+  fs.mkdirSync('ops/reports/quotation-editor-20261015',{recursive:true});
+  await page.screenshot({path:'ops/reports/quotation-editor-20261015/desktop.png',fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'page must not overflow on a phone');
+  await page.screenshot({path:'ops/reports/quotation-editor-20261015/mobile.png',fullPage:true});
+  assert.deepEqual(errors,[]);
+  console.log('PASS: browser edits, hover controls, drag reorder, reload persistence, rich clipboard, and responsive page; no page errors.');
+ }finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exitCode=1});
+

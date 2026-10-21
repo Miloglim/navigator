@@ -1,0 +1,7 @@
+# Runtime verification state; it contains machine-specific backup paths and hashes.
+ops/backup-status.json
+ops/postgres-backup-status.json
+ops/runtime.json
+backup/
+.runtime/
+.venv/

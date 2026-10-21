@@ -1,0 +1,4 @@
+{
+  "_comment": "Deployment-safe empty source list. Add production group cid values only through the controlled company configuration process.",
+  "groups": []
+}

@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-COLS = ['船司', '起运港', '目的港', '20GP', '40HQ/HC', '40NOR', '有效期', 'Freetime',
+COLS = ['船司', '起运港', '目的港', '20GP', '40HQ/HC', '40NOR', '45HQ/HC', '有效期', 'Freetime',
         '备注', '航线', '船期ETD', 'T/T航程', '亏舱费', '来源群', '发送人',
         '消息原文', '序号', '更新目标']
 # Excel 里常见的别名表头
@@ -26,6 +26,7 @@ ALIAS = {
     '起运港/POL': '起运港', 'POL': '起运港', '起运': '起运港',
     '目的港/POD': '目的港', 'POD': '目的港', '目的': '目的港',
     '40HQ': '40HQ/HC', '40HC': '40HQ/HC', '40GP': '40HQ/HC', '40NOR/HC': '40NOR',
+    '45HQ': '45HQ/HC', '45HC': '45HQ/HC',
     '免箱期': 'Freetime', 'F/T': 'Freetime', 'Freetime(天)': 'Freetime', 'Free Time': 'Freetime',
     '航程': 'T/T航程', 'T/T': 'T/T航程', 'Transit': 'T/T航程',
     '有效期至': '有效期', '有效期(起-止)': '有效期',
