@@ -65,6 +65,19 @@ def login(base_url: str, email: str, password: str) -> dict:
     return {"token": token, "identity": identity}
 
 
+def register(base_url: str, email: str, password: str) -> dict:
+    data = _request(
+        base_url,
+        "POST",
+        "/api/auth/desktop/register",
+        {"email": email, "password": password, "product": "navigator"},
+        operation="中心账号注册",
+    )
+    if not isinstance(data, dict) or str(data.get("email") or "").lower() != email.lower():
+        raise CenterAuthError("中心账号注册响应无效")
+    return data
+
+
 def validate(base_url: str, token: str) -> dict:
     access = _request(base_url, "GET", "/api/navigator/access", token=token,
                       operation="Navigator 授权查询")
@@ -93,6 +106,13 @@ def update_account_profile(base_url: str, token: str, display_name: str, avatar_
 def record_growth_event(base_url: str, token: str, event: dict) -> dict:
     return _request(base_url, "POST", "/api/account/growth", event, token=token,
                     operation="中心成长记账")
+
+
+def change_password(base_url: str, token: str, current_password: str, new_password: str) -> dict:
+    return _request(base_url, "POST", "/api/auth/desktop/password",
+                    {"currentPassword": current_password, "newPassword": new_password},
+                    token=token, operation="中心账号改密",
+                    auth_message="当前密码不正确或中心会话已失效")
 
 
 def logout(base_url: str, token: str) -> None:

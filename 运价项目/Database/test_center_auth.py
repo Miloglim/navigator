@@ -62,6 +62,43 @@ class CenterAuthClientTests(unittest.TestCase):
         self.assertEqual(result["identity"]["email"], "admin@yqn.com")
         self.assertEqual(result["access"]["role"], "admin")
 
+    def test_register_requests_navigator_sales_access_without_role_input(self):
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                import json
+                return json.dumps({"ok": True, "data": {"email": "new@example.com"}}).encode("utf-8")
+
+        with patch.object(center_auth, "urlopen", return_value=Response()) as request:
+            result = center_auth.register("http://center", "new@example.com", "Abc123")
+        self.assertEqual(result["email"], "new@example.com")
+        sent = request.call_args.args[0]
+        import json
+        self.assertEqual(json.loads(sent.data), {
+            "email": "new@example.com", "password": "Abc123", "product": "navigator",
+        })
+
+    def test_password_change_targets_center_desktop_credential_endpoint(self):
+        seen = {}
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def read(self): return b'{"ok":true,"data":{}}'
+        def open_request(request, timeout):
+            seen['url'] = request.full_url
+            seen['authorization'] = request.headers.get('Authorization')
+            return Response()
+        with patch.object(center_auth, 'urlopen', side_effect=open_request):
+            result = center_auth.change_password('http://center', 'token', 'CurrentPass1', 'NewPassword2')
+        self.assertEqual(result, {})
+        self.assertEqual(seen['url'], 'http://center/api/auth/desktop/password')
+        self.assertEqual(seen['authorization'], 'Bearer token')
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -104,6 +104,69 @@ def verify_selfservice(case, connect):
 
 
 class SelfServiceTests(unittest.TestCase):
+    def test_center_registration_creates_center_and_local_sales_identity_atomically(self):
+        with tempfile.TemporaryDirectory() as directory:
+            connect=lambda:manualdb.connect(Path(directory)/'center-registration.db')
+            with patch.object(server,'conn',side_effect=connect),patch.dict(server.CFG,{'center_auth_url':'http://center'}),patch.object(server.center_auth,'register') as register:
+                result=server.register_center_account({'name':'new@example.invalid','password':'Abc123','confirm_password':'Abc123'})
+                register.assert_called_once_with('http://center','new@example.invalid','Abc123')
+            self.assertTrue(result['ok'])
+            connection=connect()
+            try:
+                row=connection.execute("SELECT role,active,password_hash FROM operators WHERE name='new@example.invalid'").fetchone()
+                self.assertEqual((row['role'],row['active'],row['password_hash']),('sales',1,None))
+            finally:connection.close()
+
+    def test_center_registration_rolls_back_new_local_identity_when_center_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            connect=lambda:manualdb.connect(Path(directory)/'center-registration-failure.db')
+            failure=server.center_auth.CenterAuthError('中心账号注册暂不可用')
+            with patch.object(server,'conn',side_effect=connect),patch.dict(server.CFG,{'center_auth_url':'http://center'}),patch.object(server.center_auth,'register',side_effect=failure),patch.object(server.center_auth,'login',side_effect=failure):
+                with self.assertRaises(server.center_auth.CenterAuthError):
+                    server.register_center_account({'name':'failed@example.invalid','password':'Abc123','confirm_password':'Abc123'})
+            connection=connect()
+            try:self.assertIsNone(connection.execute("SELECT 1 FROM operators WHERE name='failed@example.invalid'").fetchone())
+            finally:connection.close()
+
+    def test_center_registration_repairs_a_legacy_local_only_account_with_its_original_password(self):
+        with tempfile.TemporaryDirectory() as directory:
+            connect=lambda:manualdb.connect(Path(directory)/'center-registration-legacy.db')
+            connection=connect()
+            try:
+                connection.execute("INSERT INTO operators(user_id,name,display_name,role,active,password_hash,created_at,match_mode) VALUES('usr_legacy','legacy@example.invalid','Legacy','sales',1,?,'2026-10-21 10:00:00','any')",(server.password_hash('Abc123'),))
+                connection.commit()
+            finally:connection.close()
+            with patch.object(server,'conn',side_effect=connect),patch.dict(server.CFG,{'center_auth_url':'http://center'}),patch.object(server.center_auth,'register') as register:
+                server.register_center_account({'name':'legacy@example.invalid','password':'Abc123','confirm_password':'Abc123'})
+                register.assert_called_once()
+            connection=connect()
+            try:
+                row=connection.execute("SELECT user_id,password_hash FROM operators WHERE name='legacy@example.invalid'").fetchone()
+                self.assertEqual((row['user_id'],row['password_hash']),('usr_legacy',None))
+            finally:connection.close()
+
+    def test_center_password_change_does_not_touch_local_hash_and_revokes_local_sessions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            connect=lambda:manualdb.connect(Path(directory)/'password.db')
+            connection=connect()
+            try:
+                connection.execute("INSERT INTO operators(user_id,name,display_name,role,active,password_hash,match_mode) VALUES('usr_password','password@example.invalid','Local','sales',1,'legacy-local-hash','any')")
+                connection.execute("INSERT INTO auth_sessions(token_hash,operator_name,client_ip,expires_at,created_at) VALUES(?,?,?,?,?)",('a'*64,'password@example.invalid','127.0.0.1',9999999999,'2026-10-21 10:00:00'))
+                connection.commit()
+            finally:connection.close()
+            calls=[]
+            session={'user_id':'usr_password','name':'password@example.invalid','role':'sales'}
+            result=account_selfservice.change_center_password(connect,lambda current,new:(calls.append((current,new)) or {'ok':True}),
+                lambda:'2026-10-21 11:00:00',{'current_password':'CurrentPass1','new_password':'NewPassword2','confirm_password':'NewPassword2'},session)
+            self.assertTrue(result['ok'])
+            self.assertEqual(calls,[('CurrentPass1','NewPassword2')])
+            connection=connect()
+            try:
+                row=connection.execute("SELECT password_hash FROM operators WHERE user_id='usr_password'").fetchone()
+                self.assertEqual(row['password_hash'],'legacy-local-hash')
+                self.assertEqual(connection.execute("SELECT count(*) FROM auth_sessions WHERE operator_name='password@example.invalid'").fetchone()[0],0)
+            finally:connection.close()
+
     def test_center_shared_profile_overrides_local_mirror_and_saves_center_first(self):
         with tempfile.TemporaryDirectory() as directory:
             connect=lambda:manualdb.connect(Path(directory)/'profile.db')

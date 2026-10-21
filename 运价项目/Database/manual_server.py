@@ -49,6 +49,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import secrets
 import shutil
 import socket
@@ -146,6 +147,9 @@ from ops.company_token_refresh import CompanyTokenRefresher
 from transport.company_credential_routes import build_company_credential_routes
 
 CFG: Dict[str, str] = {"db": "", "token": "", "backend": "sqlite", "postgres_env_file": "", "center_auth_url": "", "agent_api_token": ""}
+CENTER_EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+CENTER_PASSWORD_PATTERN = re.compile(r"^[A-Za-z0-9]{6,256}$")
+CENTER_EMAIL_MAX_LENGTH = 254
 CENTER_SESSION_TOKENS: Dict[str, str] = {}
 CENTER_SESSION_LOCK = RLock()
 SESSION_TTL_SECONDS = 30 * 24 * 60 * 60  # Absolute lifetime from login; ordinary reads do not extend it.
@@ -294,6 +298,60 @@ def active_admin_exists() -> bool:
     c = conn()
     try:
         return bool(c.execute("SELECT 1 FROM operators WHERE active=1 AND role='admin' AND password_hash IS NOT NULL LIMIT 1").fetchone())
+    finally:
+        c.close()
+
+
+def register_center_account(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Create the center identity and reserve the local Navigator business identity together."""
+    name, password = account_selfservice.registration(body)
+    email = name.lower()
+    if len(email) > CENTER_EMAIL_MAX_LENGTH or not CENTER_EMAIL_PATTERN.fullmatch(email):
+        raise ValueError("Navigator 创建账号必须使用有效邮箱")
+    if not CENTER_PASSWORD_PATTERN.fullmatch(password):
+        raise ValueError("密码须为6至256位英文字母或数字")
+    c = conn()
+    try:
+        row = c.execute(
+            "SELECT user_id,active,password_hash FROM operators WHERE lower(name)=?",
+            (email,),
+        ).fetchone()
+        created = not row
+        if row:
+            if not row["active"] or not row["password_hash"] or not password_matches(password, row["password_hash"]):
+                raise ValueError("账号已存在；如为历史本地账号，请使用原密码继续绑定中心账号")
+            user_id = row["user_id"]
+        else:
+            user_id = "usr_" + secrets.token_hex(16)
+            stamp = manualdb.now_cn()
+            inserted = c.execute(
+                "INSERT INTO operators(user_id,name,role,active,password_hash,password_changed_at,created_at,match_mode) "
+                "VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(name) DO NOTHING",
+                (user_id, email, ROLE_SALES, 1, password_hash(password), stamp, stamp, "any"),
+            )
+            if inserted.rowcount != 1:
+                raise ValueError("账号已被使用，请重试")
+        try:
+            center_auth.register(CFG["center_auth_url"], email, password)
+        except center_auth.CenterAuthError as register_error:
+            try:
+                center = center_auth.login(CFG["center_auth_url"], email, password)
+                center_auth.validate(CFG["center_auth_url"], center["token"])
+            except center_auth.CenterAuthError:
+                if created:
+                    c.execute("DELETE FROM operators WHERE user_id=?", (user_id,))
+                    c.commit()
+                raise register_error
+        c.execute(
+            "UPDATE operators SET name=?,role=?,active=1,password_hash=NULL WHERE user_id=?",
+            (email, ROLE_SALES, user_id),
+        )
+        admin_accounts.record_event(
+            c, user_id, "account_registered", email, user_id,
+            {"identity_source": "milogin-center"}, manualdb.now_cn(),
+        )
+        c.commit()
+        return ok({"name": email, "role": ROLE_SALES, "message": "销售账号已创建，请登录"})
     finally:
         c.close()
 
@@ -2474,7 +2532,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(403, fail("请先由管理员初始化系统", "setup_required"))
                 limiter = RECOVERY_LIMITER if p == AUTH_FORGOT_ROUTE else LOGIN_LIMITER
                 with limiter.admit(str(payload.get("name") or "").strip(), self.client_address[0]):
-                    result = ACCOUNT_POST[p](payload)
+                    result = (register_center_account(payload) if p == AUTH_REGISTER_ROUTE and CFG.get("center_auth_url")
+                              else ACCOUNT_POST[p](payload))
                 return self._json(200, result)
             if p == ACCOUNT_PROFILE_ROUTE:
                 session = self._session()
@@ -2494,7 +2553,18 @@ class Handler(BaseHTTPRequestHandler):
                 if not session:
                     return self._json(401, fail("请先登录后修改密码", "unauthenticated"))
                 with LOGIN_LIMITER.admit(session["name"], self.client_address[0]):
-                    result = ACCOUNT_POST[p](payload, session)
+                    if CFG.get("center_auth_url"):
+                        token = self._center_token()
+                        result = account_selfservice.change_center_password(
+                            conn,
+                            lambda current_password, new_password: center_auth.change_password(
+                                CFG["center_auth_url"], token, current_password, new_password),
+                            manualdb.now_cn, payload, session)
+                        sid = self._session_id()
+                        with CENTER_SESSION_LOCK:
+                            CENTER_SESSION_TOKENS.pop(sid, None)
+                    else:
+                        result = ACCOUNT_POST[p](payload, session)
                 return self._json(200, result, self._session_cookie("", expired=True))
             if p == "/api/auth/login":
                 with LOGIN_LIMITER.admit(str(payload.get("name") or "").strip(), self.client_address[0]):
