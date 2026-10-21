@@ -109,7 +109,7 @@ def record_growth_event(base_url: str, token: str, event: dict) -> dict:
 
 
 def change_password(base_url: str, token: str, current_password: str, new_password: str) -> dict:
-    return _request(base_url, "POST", "/api/auth/desktop/password",
+    return _request(base_url, "POST", "/api/account/password",
                     {"currentPassword": current_password, "newPassword": new_password},
                     token=token, operation="中心账号改密",
                     auth_message="当前密码不正确或中心会话已失效")

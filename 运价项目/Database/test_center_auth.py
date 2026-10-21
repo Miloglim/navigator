@@ -96,7 +96,7 @@ class CenterAuthClientTests(unittest.TestCase):
         with patch.object(center_auth, 'urlopen', side_effect=open_request):
             result = center_auth.change_password('http://center', 'token', 'CurrentPass1', 'NewPassword2')
         self.assertEqual(result, {})
-        self.assertEqual(seen['url'], 'http://center/api/auth/desktop/password')
+        self.assertEqual(seen['url'], 'http://center/api/account/password')
         self.assertEqual(seen['authorization'], 'Bearer token')
 
 

@@ -1,6 +1,7 @@
 # 已知陷阱
 
 - 中心账号模式下，Navigator 本地 `operators` 只承担业务身份和产品偏好镜像，不能继续作为昵称、头像或成长真源。本地会话查询不得要求 `password_hash` 非空。
+- 中心模式改密必须调用 `/api/account/password`；不得继续执行本地 `UPDATE operators SET password_hash=...`。
 - 业务经验先写本地不可变事件和 `account_growth_sync_outbox`，再补传中心；不能只在页面读取时临时计算，也不能因中心暂时离线丢失事件。
 
 - 2026-10-21：`manualdb.query_grouped` 的 SQLite 缓存探测必须在 PostgreSQL 适配器转换。漏掉 `PRAGMA database_list` 会先让事务进入 aborted 状态，表面错误却是后续 `/api/rates_grouped` 的“当前事务被终止”；不能只捕获或重试最终查询。

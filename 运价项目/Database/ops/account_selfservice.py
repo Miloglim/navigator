@@ -69,6 +69,26 @@ def change_password(connect, matches, hash_password, now, body, session):
         connection.close()
 
 
+def change_center_password(connect, center_change, now, body, session):
+    """Change the central credential; the local hash remains a legacy-only mirror."""
+    current, password = password_change(body)
+    center_change(current, password)
+    connection = connect()
+    try:
+        connection.execute("DELETE FROM auth_sessions WHERE operator_name=?", (session["name"],))
+        connection.execute(
+            'INSERT INTO account_security(user_id,must_change_password,revision) VALUES(?,0,1) '
+            'ON CONFLICT(user_id) DO UPDATE SET must_change_password=0,revision=account_security.revision+1',
+            (session['user_id'],))
+        from ops.admin_accounts import record_event
+        record_event(connection, session['user_id'], 'password_changed', session['name'], session['user_id'], {}, now())
+        resolve_requests(connection, session["name"], session["name"], now())
+        connection.commit()
+        return ok({"message": "中心账号密码已修改，请使用新密码重新登录"})
+    finally:
+        connection.close()
+
+
 def resolve_requests(connection, name, actor, stamp):
     changed = connection.execute(
         "UPDATE account_recovery_requests SET status='resolved',resolved_at=?,resolved_by=? WHERE name=? AND status='requested'",
