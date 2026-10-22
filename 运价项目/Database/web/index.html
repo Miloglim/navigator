@@ -5583,7 +5583,7 @@ function renderAccountProfile() {
   const avatarGroups=p.options.avatar_groups||[];
   const activeSex=avatarGroups.find(group=>group.people.some(person=>person.looks.some(look=>look.id===selectedAvatar)))?.sex||avatarGroups[0]?.sex;
   const legacyAvatar=selectedAvatar&&!avatarGroups.some(group=>group.people.some(person=>person.looks.some(look=>look.id===selectedAvatar)));
-  const credentialCard=S.auth?.role==='admin'?`<section class="profile-card" id="company-credential-card" style="margin-top:20px" hidden><div class="company-credential-head"><div><h3>公司查价令牌</h3><p class="profile-muted" id="company-credential-status">正在读取配置状态…</p></div><div class="company-credential-expiry"><span>剩余时间</span><strong id="company-token-countdown">读取中</strong><small id="company-token-expiry-note"></small></div></div><p class="company-credential-status" id="company-token-refresh-status" role="status">正在读取自动刷新状态…</p><div class="company-credential-actions"><label class="company-credential-toggle"><span>自动刷新</span><span class="md-switch"><input id="company-refresh-toggle" type="checkbox" onchange="toggleCompanyTokenAutoRefresh(this)" aria-label="自动刷新公司查价令牌" disabled><span class="md-slider"></span></span></label><button class="btn-reset" type="button" id="company-refresh-now" onclick="refreshCompanyTokenNow()" disabled>立即刷新</button><button class="btn-reset" type="button" id="company-refresh-connect" onclick="connectCompanyTokenRefresh()" hidden>重新连接知识库</button></div><details class="company-credential-manual"><summary>手动更新测试令牌</summary><form onsubmit="saveCompanyCredentials(event)"><div class="profile-inline"><label class="profile-field"><span>公司业务用户 ID（非钉钉ID）</span><input id="company-credential-user-id" inputmode="numeric" pattern="[0-9]+" autocomplete="off" required></label><label class="profile-field"><span>测试 Token</span><input id="company-credential-token" type="password" autocomplete="new-password" required></label></div><button class="btn-submit" type="submit">保存测试令牌</button></form></details></section>`:'';
+  const credentialCard=S.auth?.role==='admin'?`<section class="profile-card" id="company-credential-card" style="margin-top:20px" hidden><div class="company-credential-head"><div><h3>公司查价令牌</h3><p class="profile-muted" id="company-credential-status">正在读取配置状态…</p></div><div class="company-credential-expiry"><span>剩余时间</span><strong id="company-token-countdown">读取中</strong><small id="company-token-expiry-note"></small></div></div><p class="company-credential-status" id="company-token-refresh-status" role="status">正在读取自动刷新状态…</p><a id="company-refresh-login-link" href="#" target="_blank" rel="noopener noreferrer" hidden>打开知识库登录</a><div class="company-credential-actions"><label class="company-credential-toggle"><span>自动刷新</span><span class="md-switch"><input id="company-refresh-toggle" type="checkbox" onchange="toggleCompanyTokenAutoRefresh(this)" aria-label="自动刷新公司查价令牌" disabled><span class="md-slider"></span></span></label><button class="btn-reset" type="button" id="company-refresh-now" onclick="refreshCompanyTokenNow()" disabled>立即刷新</button><button class="btn-reset" type="button" id="company-refresh-connect" onclick="connectCompanyTokenRefresh()" hidden>重新连接知识库</button></div><details class="company-credential-manual"><summary>手动更新测试令牌</summary><form onsubmit="saveCompanyCredentials(event)"><div class="profile-inline"><label class="profile-field"><span>公司业务用户 ID（非钉钉ID）</span><input id="company-credential-user-id" inputmode="numeric" pattern="[0-9]+" autocomplete="off" required></label><label class="profile-field"><span>测试 Token</span><input id="company-credential-token" type="password" autocomplete="new-password" required></label></div><button class="btn-submit" type="submit">保存测试令牌</button></form></details></section>`:'';
   const avatarTabs=avatarGroups.map(group=>'<button type="button" class="avatar-tab" role="tab" id="avatar-tab-'+esc(group.sex)+'" aria-controls="avatar-panel-'+esc(group.sex)+'" aria-selected="'+String(group.sex===activeSex)+'" onclick="showAvatarSex(&quot;'+esc(group.sex)+'&quot;)">'+esc(group.label)+'</button>').join('');
   const avatarPanels=avatarGroups.map(group=>'<div role="tabpanel" id="avatar-panel-'+esc(group.sex)+'" aria-labelledby="avatar-tab-'+esc(group.sex)+'" '+(group.sex===activeSex?'':'hidden')+'>'+group.people.map(person=>'<section class="avatar-person"><h3>'+esc(person.label)+'</h3><div class="avatar-grid" role="group" aria-label="'+esc(group.label+' '+person.label)+'">'+person.looks.map(look=>avatarChoice(look.id,look.label)).join('')+'</div></section>').join('')+'</div>').join('');
   $('profile-content').innerHTML=`<div class="profile-layout"><aside class="profile-identity-panel"><div class="profile-card profile-identity">
@@ -5669,6 +5669,8 @@ async function loadCompanyTokenRefreshStatus() {
   $('company-refresh-connect').disabled=companyTokenConnecting;
   $('company-refresh-connect').hidden=!data.auto_refresh||companyTokenConnecting;
   $('company-refresh-now').disabled=!data.auto_refresh||companyTokenConnecting;
+  const loginLink=$('company-refresh-login-link');
+  if(loginLink&&!companyTokenConnecting) loginLink.hidden=true;
 }
 async function toggleCompanyTokenAutoRefresh(input) {
   input.disabled=true;
@@ -5685,12 +5687,15 @@ async function resumeCompanyTokenRefresh() {
 }
 async function connectCompanyTokenRefresh() {
   const button=$('company-refresh-connect');button.disabled=true;
+  const loginWindow=window.open('about:blank','knowledge-login');
   const result=await postJSON('/api/admin/company-token-refresh/connect',{});
-  if(!result.ok){button.disabled=false;toast(result.error||'无法打开知识库登录','error');return;}
+  if(!result.ok){button.disabled=false;if(loginWindow)loginWindow.close();toast(result.error||'无法打开知识库登录','error');return;}
   if(result.data?.auth_url) {
     companyTokenLastStatusAt=0;
-    const opened=window.open(result.data.auth_url,'_blank','noopener,noreferrer');
-    if(!opened) toast('浏览器阻止了知识库登录窗口，请允许弹窗后重试','error');
+    const loginLink=$('company-refresh-login-link');
+    if(loginLink){loginLink.href=result.data.auth_url;loginLink.hidden=false;}
+    if(loginWindow){loginWindow.opener=null;loginWindow.location.replace(result.data.auth_url);}
+    else toast('浏览器阻止了自动弹窗，请点击“打开知识库登录”','error');
   }
   await loadCompanyTokenRefreshStatus();
 }

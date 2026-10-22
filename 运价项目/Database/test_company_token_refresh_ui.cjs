@@ -11,6 +11,7 @@ assert(start >= 0 && end > start);
 
 let enabled = true;
 let canResume = false;
+let openedUrl = '';
 const calls = [];
 const elements = new Map();
 function element(id) {
@@ -24,6 +25,7 @@ const context = {
   Number,
   String,
   setInterval() {},
+  window: { open: () => ({ opener: {}, location: { replace: url => { openedUrl = url; } } }) },
   fetch: async () => ({ok:true, json:async () => ({ok:true, data:{
     auto_refresh:enabled, can_resume:canResume, configured:true, expires_at:new Date(Date.now()+86400000).toISOString(),
     last_success_at:new Date().toISOString(), connection_state:'idle', last_error:null,
@@ -32,7 +34,7 @@ const context = {
     calls.push(path);
     if (path.endsWith('/disable')) { enabled = false; canResume = true; }
     if (path.endsWith('/enable') || path.endsWith('/connect')) { enabled = true; canResume = false; }
-    return {ok:true, data:{last_error:null}};
+    return {ok:true, data:{last_error:null, ...(path.endsWith('/connect') ? {auth_url:'https://login.dingtalk.com/oauth2/auth?x=ui'} : {})}};
   },
   loadCompanyCredentialStatus() {},
   toast() {},
@@ -66,5 +68,6 @@ vm.runInContext(source.slice(start, end), context);
   element('company-refresh-toggle').checked = true;
   await context.toggleCompanyTokenAutoRefresh(element('company-refresh-toggle'));
   assert.equal(calls.at(-1), '/api/admin/company-token-refresh/connect');
+  assert.match(openedUrl, /login\.dingtalk\.com/);
   console.log('company token refresh UI: ok');
 })().catch(error => { console.error(error); process.exitCode = 1; });
