@@ -4,6 +4,7 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync('web/index.html', 'utf8');
 assert(source.includes('id="company-refresh-toggle" type="checkbox"'));
+assert(source.includes('id="company-refresh-check"'));
 assert(!source.includes('id="company-refresh-disable"'));
 const start = source.indexOf('const COMPANY_TOKEN_LIFETIME_MS=');
 const end = source.indexOf("setInterval(() => { if ($('company-token-refresh-status')", start);
@@ -12,6 +13,7 @@ assert(start >= 0 && end > start);
 let enabled = true;
 let canResume = false;
 let openedUrl = '';
+let authenticatedCheck = false;
 const calls = [];
 const elements = new Map();
 function element(id) {
@@ -25,7 +27,7 @@ const context = {
   Number,
   String,
   setInterval() {},
-  window: { open: () => ({ opener: {}, location: { replace: url => { openedUrl = url; } } }) },
+  window: { open: () => ({ opener: {}, close() {}, location: { replace: url => { openedUrl = url; } } }) },
   fetch: async () => ({ok:true, json:async () => ({ok:true, data:{
     auto_refresh:enabled, can_resume:canResume, configured:true, expires_at:new Date(Date.now()+86400000).toISOString(),
     last_success_at:new Date().toISOString(), connection_state:'idle', last_error:null,
@@ -34,7 +36,7 @@ const context = {
     calls.push(path);
     if (path.endsWith('/disable')) { enabled = false; canResume = true; }
     if (path.endsWith('/enable') || path.endsWith('/connect')) { enabled = true; canResume = false; }
-    return {ok:true, data:{last_error:null, ...(path.endsWith('/connect') ? {auth_url:'https://login.dingtalk.com/oauth2/auth?x=ui'} : {})}};
+    return {ok:true, data:{last_error:null, ...(path.endsWith('/connect') ? (authenticatedCheck ? {authenticated:true,auth_url:null} : {authenticated:false,auth_url:'https://login.dingtalk.com/oauth2/auth?x=ui'}) : {})}};
   },
   loadCompanyCredentialStatus() {},
   toast() {},
@@ -69,5 +71,9 @@ vm.runInContext(source.slice(start, end), context);
   await context.toggleCompanyTokenAutoRefresh(element('company-refresh-toggle'));
   assert.equal(calls.at(-1), '/api/admin/company-token-refresh/connect');
   assert.match(openedUrl, /login\.dingtalk\.com/);
+  authenticatedCheck = true;
+  openedUrl = '';
+  await context.checkCompanyKnowledgeLogin();
+  assert.equal(openedUrl, '');
   console.log('company token refresh UI: ok');
 })().catch(error => { console.error(error); process.exitCode = 1; });

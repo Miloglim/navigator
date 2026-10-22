@@ -169,6 +169,16 @@ class CompanyTokenRefresher:
                 raise ValueError("请先配置公司业务用户 ID 和测试令牌")
             if self.connection_state == "connecting" and self.remote_login:
                 return {**self.status(owner_user_id), "auth_url": self.remote_login["auth_url"]}
+            state = self._load()
+        if state and state.get("refresh_token"):
+            checked = self.refresh(owner_user_id, force=True)
+            if checked and not checked.get("last_error"):
+                with self.lock:
+                    self.connection_state = "connected"
+                    self.connection_error = None
+                    self.remote_login = None
+                return {**checked, "authenticated": True, "auth_url": None}
+        with self.lock:
             self.connection_generation += 1
             generation = self.connection_generation
             self.connection_state = "connecting"
@@ -193,7 +203,8 @@ class CompanyTokenRefresher:
                     "owner_user_id": str(owner_user_id), "generation": generation,
                     "expires_at": self.now() + timedelta(seconds=expires_in),
                 }
-            return {**self.status(owner_user_id), "auth_url": auth_url, "login_expires_in": expires_in}
+            return {**self.status(owner_user_id), "authenticated": False,
+                    "auth_url": auth_url, "login_expires_in": expires_in}
         except Exception as error:
             with self.lock:
                 if generation == self.connection_generation:

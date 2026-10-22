@@ -137,6 +137,30 @@ class CompanyTokenRefreshTests(unittest.TestCase):
             self.assertFalse(refresher.status("admin-1")["auto_refresh"])
             self.assertEqual(credentials.credentials()["token"], "kbtt_old")
 
+    def test_connection_check_reuses_valid_refresh_without_starting_login(self):
+        with tempfile.TemporaryDirectory() as directory:
+            seal = lambda value: b"sealed:" + value[::-1]
+            unseal = lambda value: value.removeprefix(b"sealed:")[::-1]
+            credentials = CompanyCredentialStore(Path(directory) / "company.bin", seal, unseal)
+            credentials.save({"token": "kbtt_old", "user_id": 2246998}, "admin-1")
+            calls = []
+
+            def post(url, body, bearer=None):
+                calls.append(url)
+                if url == KB_AUTH_REFRESH_URL:
+                    return {"access_token": "short-access"}
+                self.assertEqual(url, KB_TEST_TOKEN_URL)
+                return {"token": "kbtt_checked"}
+
+            refresher = CompanyTokenRefresher(credentials, Path(directory) / "refresh.bin", seal, unseal,
+                                               post=post, get=lambda url: self.fail("DingTalk login must not start"))
+            refresher.configure("valid-refresh", "admin-1")
+            result = refresher.connect_browser("admin-1")
+            self.assertTrue(result["authenticated"])
+            self.assertIsNone(result["auth_url"])
+            self.assertEqual(calls, [KB_AUTH_REFRESH_URL, KB_TEST_TOKEN_URL])
+            self.assertEqual(credentials.credentials()["token"], "kbtt_checked")
+
 
 if __name__ == "__main__":
     unittest.main()
