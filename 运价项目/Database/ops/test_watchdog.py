@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from ops.watchdog import parse_listener_pids, runtime_backend, runtime_config
+from ops.watchdog import parse_listener_pids, runtime_backend, runtime_config, start
 
 
 class WatchdogTests(unittest.TestCase):
@@ -43,6 +43,23 @@ class WatchdogTests(unittest.TestCase):
     def test_parse_listener_pids_allows_ipv6(self):
         output = "  TCP    [::]:8795              [::]:0                 LISTENING       34492\n"
         self.assertEqual(parse_listener_pids(output, 8795), [34492])
+
+    def test_start_passes_trusted_proxy_flag_to_daemon(self):
+        with tempfile.TemporaryDirectory() as temp:
+            config = Path(temp) / "runtime.json"
+            config.write_text(json.dumps({
+                "backend": "postgres",
+                "center_auth_url": "https://center.example",
+                "trusted_proxy_https": True,
+            }), encoding="utf-8")
+            with patch("ops.watchdog.RUNTIME_CONFIG", str(config)), \
+                    patch("ops.watchdog.subprocess.run") as run, \
+                    patch("ops.watchdog.time.sleep"), \
+                    patch("ops.watchdog.http_ok", return_value=True), \
+                    patch.dict("os.environ", {"EXISTING": "kept"}, clear=True):
+                start()
+            self.assertEqual(run.call_args.kwargs["env"]["NAVIGATOR_TRUSTED_PROXY_HTTPS"], "1")
+            self.assertEqual(run.call_args.kwargs["env"]["EXISTING"], "kept")
 
 
 if __name__ == "__main__":

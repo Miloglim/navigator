@@ -46,7 +46,9 @@ def runtime_config():
     center_auth_url = str(settings.get("center_auth_url") or os.environ.get("NAVIGATOR_CENTER_AUTH_URL", "")).rstrip("/")
     if center_auth_url and not center_auth_url.startswith(("http://", "https://")):
         raise ValueError("中心身份地址必须是 HTTP 或 HTTPS URL")
-    return {**settings, "tls_cert_file": cert, "tls_key_file": key, "health_base_url": url.rstrip("/"), "center_auth_url": center_auth_url}
+    trusted_proxy_https = settings.get("trusted_proxy_https") is True
+    return {**settings, "tls_cert_file": cert, "tls_key_file": key, "health_base_url": url.rstrip("/"),
+            "center_auth_url": center_auth_url, "trusted_proxy_https": trusted_proxy_https}
 
 
 def runtime_backend() -> str:
@@ -104,7 +106,10 @@ def start() -> None:
         command.extend(["--center-auth-url", settings["center_auth_url"]])
     if settings["tls_cert_file"]:
         command.extend(["--tls-cert-file", settings["tls_cert_file"], "--tls-key-file", settings["tls_key_file"]])
-    subprocess.run(command, cwd=os.path.dirname(SERVER), check=True)
+    child_env = os.environ.copy()
+    if settings["trusted_proxy_https"]:
+        child_env["NAVIGATOR_TRUSTED_PROXY_HTTPS"] = "1"
+    subprocess.run(command, cwd=os.path.dirname(SERVER), env=child_env, check=True)
     for _ in range(STARTUP_RETRY_COUNT):
         time.sleep(RETRY_INTERVAL_SECONDS)
         if http_ok(backend):
