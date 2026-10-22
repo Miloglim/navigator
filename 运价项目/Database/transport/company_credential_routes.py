@@ -22,7 +22,7 @@ def build_company_credential_routes(store, refresher=None):
     if refresher is not None:
         def refresh_status(query):
             require_local_admin(query.get("_role"), query.get("_client_ip"))
-            return ok(refresher.status(query.get("_actor_id")))
+            return ok(refresher.poll_connection(query.get("_actor_id")))
 
         def configure(body):
             require_local_admin(body.get("_role"), body.get("_client_ip"))

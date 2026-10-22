@@ -1,12 +1,10 @@
 import tempfile
-import time
 import unittest
-from threading import Event
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from core.company_credentials_contracts import (KB_AUTH_REFRESH_URL, KB_TEST_TOKEN_URL,
-    COMPANY_TOKEN_REFRESH_CONNECT_ROUTE)
+    KB_DINGTALK_START_URL, COMPANY_TOKEN_REFRESH_CONNECT_ROUTE, COMPANY_TOKEN_REFRESH_ROUTE)
 from ops.company_credentials import CompanyCredentialStore
 from ops.company_token_refresh import CompanyTokenRefresher
 from transport.company_credential_routes import build_company_credential_routes
@@ -86,7 +84,7 @@ class CompanyTokenRefreshTests(unittest.TestCase):
                 refresher.disable("admin-2")
             self.assertFalse(refresher.disable("admin-1")["auto_refresh"])
 
-    def test_browser_connection_uses_local_admin_and_keeps_secret_out_of_status(self):
+    def test_remote_dingtalk_connection_keeps_secret_out_of_status(self):
         with tempfile.TemporaryDirectory() as directory:
             seal = lambda value: b"sealed:" + value[::-1]
             unseal = lambda value: value.removeprefix(b"sealed:")[::-1]
@@ -94,50 +92,47 @@ class CompanyTokenRefreshTests(unittest.TestCase):
             credentials.save({"token": "kbtt_old", "user_id": 2246998}, "admin-1")
 
             def post(url, body, bearer=None):
+                if url == KB_DINGTALK_START_URL:
+                    self.assertEqual(body, {"device_type": "web"})
+                    return {"data": {"auth_url": "https://login.dingtalk.com/oauth2/auth?x=1", "state": "state-1", "expires_in": 300}}
                 if url == KB_AUTH_REFRESH_URL:
                     self.assertEqual(body, {"refresh_token": "browser-secret"})
                     return {"access_token": "short-access"}
                 self.assertEqual(url, KB_TEST_TOKEN_URL)
                 return {"token": "kbtt_new"}
 
+            def get(url):
+                self.assertIn("state=state-1", url)
+                return {"data": {"status": "success", "refresh_token": "browser-secret"}}
+
             refresher = CompanyTokenRefresher(credentials, Path(directory) / "refresh.bin", seal, unseal,
-                                               post=post, browser_login=lambda cancelled: "browser-secret")
-            _, routes = build_company_credential_routes(credentials, refresher)
+                                               post=post, get=get)
+            get_routes, routes = build_company_credential_routes(credentials, refresher)
             request = {"_role": "admin", "_client_ip": "127.0.0.1", "_actor_id": "admin-1"}
             with self.assertRaises(PermissionError):
                 routes[COMPANY_TOKEN_REFRESH_CONNECT_ROUTE]({**request, "_client_ip": "192.0.2.1"})
-            routes[COMPANY_TOKEN_REFRESH_CONNECT_ROUTE](request)
-            deadline = time.monotonic() + 2
-            while refresher.status("admin-1")["connection_state"] == "connecting" and time.monotonic() < deadline:
-                time.sleep(0.01)
-            result = refresher.status("admin-1")
+            started = routes[COMPANY_TOKEN_REFRESH_CONNECT_ROUTE](request)["data"]
+            self.assertIn("login.dingtalk.com", started["auth_url"])
+            self.assertNotIn("browser-secret", str(started))
+            result = get_routes[COMPANY_TOKEN_REFRESH_ROUTE](request)["data"]
             self.assertEqual(result["connection_state"], "connected")
             self.assertTrue(result["expiry_estimated"])
             self.assertEqual(credentials.credentials()["token"], "kbtt_new")
             self.assertNotIn("browser-secret", str(result))
 
-    def test_cancelled_browser_connection_does_not_change_current_token(self):
+    def test_pending_remote_connection_and_disable_do_not_change_current_token(self):
         with tempfile.TemporaryDirectory() as directory:
             seal = lambda value: b"sealed:" + value[::-1]
             unseal = lambda value: value.removeprefix(b"sealed:")[::-1]
             credentials = CompanyCredentialStore(Path(directory) / "company.bin", seal, unseal)
             credentials.save({"token": "kbtt_old", "user_id": 2246998}, "admin-1")
-            started = Event()
-            cancelled_event = Event()
-
-            def browser_login(cancelled):
-                started.set()
-                while not cancelled():
-                    time.sleep(0.01)
-                cancelled_event.set()
-                raise RuntimeError("知识库连接已取消")
-
+            started = {"data": {"auth_url": "https://login.dingtalk.com/oauth2/auth?x=2", "state": "state-2", "expires_in": 300}}
             refresher = CompanyTokenRefresher(credentials, Path(directory) / "refresh.bin", seal, unseal,
-                                               browser_login=browser_login)
+                                               post=lambda url, body, bearer=None: started,
+                                               get=lambda url: {"data": {"status": "pending"}})
             refresher.connect_browser("admin-1")
-            self.assertTrue(started.wait(1))
+            self.assertEqual(refresher.poll_connection("admin-1")["connection_state"], "connecting")
             refresher.disable("admin-1")
-            self.assertTrue(cancelled_event.wait(1))
             self.assertEqual(refresher.status("admin-1")["connection_state"], "idle")
             self.assertFalse(refresher.status("admin-1")["auto_refresh"])
             self.assertEqual(credentials.credentials()["token"], "kbtt_old")

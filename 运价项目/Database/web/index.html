@@ -5661,7 +5661,7 @@ async function loadCompanyTokenRefreshStatus() {
     :(data.configured?'按保存时间估算，实际可能更早':'连接后显示');
   updateCompanyTokenCountdown();
   const time=value=>value?new Date(value).toLocaleString('zh-CN',{hour12:false}):'—';
-  status.textContent=companyTokenConnecting?'等待知识库登录…':data.connection_error?'连接失败：'+data.connection_error
+  status.textContent=companyTokenConnecting?'请在本人浏览器完成知识库登录，Navigator 正在等待授权…':data.connection_error?'连接失败：'+data.connection_error
     :data.auto_refresh?'自动刷新已开启 · 上次成功 '+time(data.last_success_at)+(data.last_error?' · 最近失败：'+data.last_error:'')
     :companyTokenCanResume?'自动刷新已暂停 · 当前令牌到期后不会续期':'尚未连接知识库，当前令牌不会自动续期';
   $('company-refresh-toggle').checked=!!data.auto_refresh||companyTokenConnecting;
@@ -5687,7 +5687,12 @@ async function connectCompanyTokenRefresh() {
   const button=$('company-refresh-connect');button.disabled=true;
   const result=await postJSON('/api/admin/company-token-refresh/connect',{});
   if(!result.ok){button.disabled=false;toast(result.error||'无法打开知识库登录','error');return;}
-  loadCompanyTokenRefreshStatus();
+  if(result.data?.auth_url) {
+    companyTokenLastStatusAt=0;
+    const opened=window.open(result.data.auth_url,'_blank','noopener,noreferrer');
+    if(!opened) toast('浏览器阻止了知识库登录窗口，请允许弹窗后重试','error');
+  }
+  await loadCompanyTokenRefreshStatus();
 }
 async function refreshCompanyTokenNow() {
   const button=$('company-refresh-now'); if(button) button.disabled=true;

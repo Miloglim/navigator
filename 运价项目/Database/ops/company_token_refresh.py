@@ -6,15 +6,16 @@ import os
 from pathlib import Path
 from threading import Lock, Thread
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
 from core.company_credentials_contracts import (
     COMPANY_TOKEN_REFRESH_STORE_FILE, KB_AUTH_REFRESH_URL, KB_TEST_TOKEN_URL,
+    KB_DINGTALK_START_URL, KB_DINGTALK_STATUS_URL,
     KB_TOKEN_LIFETIME_SECONDS, KB_REFRESH_EARLY_SECONDS, KB_REFRESH_CHECK_SECONDS,
     KB_HTTP_TIMEOUT_SECONDS,
 )
 from ops.company_credentials import default_credential_path, protect, unprotect
-from ops.kb_browser_login import capture_refresh_token
 
 
 def _utc_now():
@@ -47,6 +48,17 @@ def _post_json(url, payload, bearer=None):
         raise RuntimeError("暂时无法连接知识库") from None
 
 
+def _get_json(url):
+    request = Request(url, headers={"Accept": "application/json"}, method="GET")
+    try:
+        with urlopen(request, timeout=KB_HTTP_TIMEOUT_SECONDS) as response:
+            return json.load(response)
+    except HTTPError as error:
+        raise RuntimeError(f"知识库接口返回 HTTP {error.code}") from None
+    except (URLError, TimeoutError):
+        raise RuntimeError("暂时无法连接知识库") from None
+
+
 def _test_token(response):
     data = response.get("data", response) if isinstance(response, dict) else None
     if not isinstance(data, dict):
@@ -59,19 +71,20 @@ def _test_token(response):
 
 class CompanyTokenRefresher:
     def __init__(self, credentials, path=None, protect_data=protect, unprotect_data=unprotect,
-                 now=_utc_now, post=_post_json, logger=None, browser_login=capture_refresh_token):
+                 now=_utc_now, post=_post_json, get=_get_json, logger=None):
         self.credentials = credentials
         self.path = Path(path) if path else default_credential_path().with_name(COMPANY_TOKEN_REFRESH_STORE_FILE)
         self.protect_data = protect_data
         self.unprotect_data = unprotect_data
         self.now = now
         self.post = post
+        self.get = get
         self.logger = logger or (lambda level, message: None)
-        self.browser_login = browser_login
         self.lock = Lock()
         self.connection_state = "idle"
         self.connection_error = None
         self.connection_generation = 0
+        self.remote_login = None
 
     def _load(self):
         if not self.path.exists():
@@ -154,30 +167,84 @@ class CompanyTokenRefresher:
                 raise PermissionError("公司接口凭据已绑定其他管理员")
             if not owner["configured"]:
                 raise ValueError("请先配置公司业务用户 ID 和测试令牌")
-            if self.connection_state == "connecting":
-                return self.status(owner_user_id)
+            if self.connection_state == "connecting" and self.remote_login:
+                return {**self.status(owner_user_id), "auth_url": self.remote_login["auth_url"]}
             self.connection_generation += 1
             generation = self.connection_generation
             self.connection_state = "connecting"
             self.connection_error = None
-
-        def worker():
-            try:
-                token = self.browser_login(cancelled=lambda: generation != self.connection_generation)
-                self.configure(token, owner_user_id, generation=generation)
-                result = self.refresh(owner_user_id, force=True)
-                if result["last_error"]:
-                    raise RuntimeError(result["last_error"])
-                if generation == self.connection_generation:
-                    self.connection_state = "connected"
-            except Exception as error:
+            self.remote_login = None
+        try:
+            response = self.post(KB_DINGTALK_START_URL, {"device_type": "web"})
+            data = response.get("data", response) if isinstance(response, dict) else None
+            if not isinstance(data, dict):
+                raise RuntimeError("知识库登录响应无效")
+            auth_url = str(data.get("auth_url") or "")
+            state_value = str(data.get("state") or "")
+            expires_in = int(data.get("expires_in") or 0)
+            address = urlparse(auth_url)
+            if address.scheme != "https" or not address.hostname or not state_value or expires_in < 1:
+                raise RuntimeError("知识库登录响应无效")
+            with self.lock:
+                if generation != self.connection_generation:
+                    raise RuntimeError("知识库连接已取消")
+                self.remote_login = {
+                    "state": state_value, "auth_url": auth_url,
+                    "owner_user_id": str(owner_user_id), "generation": generation,
+                    "expires_at": self.now() + timedelta(seconds=expires_in),
+                }
+            return {**self.status(owner_user_id), "auth_url": auth_url, "login_expires_in": expires_in}
+        except Exception as error:
+            with self.lock:
                 if generation == self.connection_generation:
                     self.connection_state = "error"
-                    self.connection_error = str(error) if isinstance(error, RuntimeError) else "知识库连接失败，请重试"
-                    self.logger("WARN", "公司查价知识库连接失败：" + self.connection_error)
+                    self.connection_error = str(error) if isinstance(error, RuntimeError) else "知识库登录启动失败，请重试"
+                    self.remote_login = None
+            raise
 
-        Thread(target=worker, daemon=True, name="company-kb-login").start()
-        return self.status(owner_user_id)
+    def poll_connection(self, owner_user_id):
+        with self.lock:
+            pending = self.remote_login
+            if not pending or self.connection_state != "connecting":
+                return self.status(owner_user_id)
+            if pending["owner_user_id"] != str(owner_user_id):
+                raise PermissionError("知识库连接属于其他管理员")
+            if self.now() >= pending["expires_at"]:
+                self.connection_state = "error"
+                self.connection_error = "知识库登录已超时，请重新连接"
+                self.remote_login = None
+                return self.status(owner_user_id)
+            state_value, generation = pending["state"], pending["generation"]
+        try:
+            response = self.get(KB_DINGTALK_STATUS_URL + "?" + urlencode({"state": state_value}))
+            data = response.get("data", response) if isinstance(response, dict) else None
+            if not isinstance(data, dict):
+                raise RuntimeError("知识库登录状态响应无效")
+            login_status = str(data.get("status") or "")
+            if login_status in {"pending", "processing"}:
+                return self.status(owner_user_id)
+            if login_status != "success":
+                raise RuntimeError(str(data.get("message") or "知识库登录失败，请重新连接"))
+            refresh_token = data.get("refresh_token")
+            if not isinstance(refresh_token, str) or not refresh_token:
+                raise RuntimeError("知识库未返回自动刷新凭据")
+            self.configure(refresh_token, owner_user_id, generation=generation)
+            current = self.refresh(owner_user_id, force=True)
+            if current and current.get("last_error"):
+                raise RuntimeError(current["last_error"])
+            with self.lock:
+                if generation == self.connection_generation:
+                    self.connection_state = "connected"
+                    self.connection_error = None
+                    self.remote_login = None
+            return self.status(owner_user_id)
+        except Exception as error:
+            with self.lock:
+                if generation == self.connection_generation:
+                    self.connection_state = "error"
+                    self.connection_error = str(error) if isinstance(error, RuntimeError) else "知识库登录状态查询失败"
+                    self.remote_login = None
+            return self.status(owner_user_id)
 
     def refresh(self, owner_user_id=None, force=False):
         with self.lock:
