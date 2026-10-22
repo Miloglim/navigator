@@ -1,13 +1,26 @@
-"""Windows DPAPI-backed storage for the rotating company gateway token."""
+"""Cross-platform encrypted storage for the rotating company gateway token."""
 
 import ctypes
 from ctypes import wintypes
 from datetime import datetime, timezone
+import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
+import secrets
+import shutil
+import subprocess
+from threading import Lock
 
 from core.company_credentials_contracts import COMPANY_CREDENTIAL_STORE_DIR, COMPANY_CREDENTIAL_STORE_FILE
+
+LINUX_FILE_MAGIC = b"MLGC1"
+LINUX_KEY_BYTES = 64
+LINUX_HMAC_BYTES = 32
+OPENSSL_PBKDF2_ITERATIONS = 200_000
+DEFAULT_CREDENTIAL_KEY_FILE = "company-credential-master.key"
+LINUX_KEY_LOCK = Lock()
 
 
 class _DataBlob(ctypes.Structure):
@@ -39,24 +52,88 @@ def _dpapi(operation, data):
         ctypes.windll.kernel32.LocalFree(target.pbData)
 
 
+def _linux_key_path():
+    return default_credential_path().with_name(DEFAULT_CREDENTIAL_KEY_FILE)
+
+
+def _linux_key(path=None):
+    key_path = Path(path) if path else _linux_key_path()
+    key_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(key_path.parent, 0o700)
+    with LINUX_KEY_LOCK:
+        try:
+            key = key_path.read_bytes()
+        except FileNotFoundError:
+            key = secrets.token_bytes(LINUX_KEY_BYTES)
+            descriptor = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, "wb") as target:
+                target.write(key)
+            os.chmod(key_path, 0o600)
+    if len(key) != LINUX_KEY_BYTES:
+        raise RuntimeError("公司接口凭据主密钥无效")
+    return key
+
+
+def _openssl_cipher(data, key_path, decrypt=False):
+    openssl = shutil.which("openssl")
+    if not openssl:
+        raise RuntimeError("Linux 公司接口凭据加密需要 OpenSSL")
+    command = [openssl, "enc", "-aes-256-cbc", "-pbkdf2", "-iter", str(OPENSSL_PBKDF2_ITERATIONS),
+               "-salt", "-pass", f"file:{key_path}"]
+    if decrypt:
+        command.append("-d")
+    result = subprocess.run(command, input=data, capture_output=True, check=False)
+    if result.returncode != 0:
+        raise RuntimeError("公司接口凭据解密失败" if decrypt else "公司接口凭据加密失败")
+    return result.stdout
+
+
+def _linux_protect(data, key_path=None):
+    path = Path(key_path) if key_path else _linux_key_path()
+    key = _linux_key(path)
+    ciphertext = _openssl_cipher(data, path)
+    mac = hmac.new(key[LINUX_HMAC_BYTES:], LINUX_FILE_MAGIC + ciphertext, hashlib.sha256).digest()
+    return LINUX_FILE_MAGIC + mac + ciphertext
+
+
+def _linux_unprotect(data, key_path=None):
+    if not data.startswith(LINUX_FILE_MAGIC) or len(data) <= len(LINUX_FILE_MAGIC) + LINUX_HMAC_BYTES:
+        raise RuntimeError("公司接口凭据文件格式无效")
+    path = Path(key_path) if key_path else _linux_key_path()
+    key = _linux_key(path)
+    offset = len(LINUX_FILE_MAGIC)
+    expected = data[offset:offset + LINUX_HMAC_BYTES]
+    ciphertext = data[offset + LINUX_HMAC_BYTES:]
+    actual = hmac.new(key[LINUX_HMAC_BYTES:], LINUX_FILE_MAGIC + ciphertext, hashlib.sha256).digest()
+    if not hmac.compare_digest(actual, expected):
+        raise RuntimeError("公司接口凭据完整性校验失败")
+    return _openssl_cipher(ciphertext, path, decrypt=True)
+
+
 def protect(data):
-    return _dpapi("CryptProtectData", data)
+    return _dpapi("CryptProtectData", data) if os.name == "nt" else _linux_protect(data)
 
 
 def unprotect(data):
-    return _dpapi("CryptUnprotectData", data)
+    return _dpapi("CryptUnprotectData", data) if os.name == "nt" else _linux_unprotect(data)
 
 
 def default_credential_path():
-    root = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
+    if os.name == "nt":
+        root = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
+    else:
+        root = Path(__file__).resolve().parents[1] / ".runtime"
     return root / COMPANY_CREDENTIAL_STORE_DIR / COMPANY_CREDENTIAL_STORE_FILE
 
 
 class CompanyCredentialStore:
-    def __init__(self, path=None, protect_data=protect, unprotect_data=unprotect, now=None):
+    def __init__(self, path=None, protect_data=None, unprotect_data=None, now=None, key_path=None):
         self.path = Path(path) if path else default_credential_path()
-        self.protect_data = protect_data
-        self.unprotect_data = unprotect_data
+        self.key_path = Path(key_path) if key_path else self.path.with_name(DEFAULT_CREDENTIAL_KEY_FILE)
+        self.protect_data = protect_data or ((lambda value: _dpapi("CryptProtectData", value))
+            if os.name == "nt" else (lambda value: _linux_protect(value, self.key_path)))
+        self.unprotect_data = unprotect_data or ((lambda value: _dpapi("CryptUnprotectData", value))
+            if os.name == "nt" else (lambda value: _linux_unprotect(value, self.key_path)))
         self.now = now or (lambda: datetime.now(timezone.utc).isoformat())
 
     def load(self):
@@ -84,7 +161,11 @@ class CompanyCredentialStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_suffix(self.path.suffix + ".tmp")
         temporary.write_bytes(encrypted)
+        if os.name != "nt":
+            os.chmod(temporary, 0o600)
         os.replace(temporary, self.path)
+        if os.name != "nt":
+            os.chmod(self.path, 0o600)
         return self.status(owner_user_id, payload)
 
     def status(self, requester_user_id, payload=None):

@@ -55,6 +55,23 @@ class CompanyCredentialTests(unittest.TestCase):
             self.assertNotIn(b"dpapi-private-token", path.read_bytes())
             self.assertEqual(store.credentials(), {"token": "dpapi-private-token", "user_id": 789})
 
+    @unittest.skipUnless(os.name != "nt", "Linux OpenSSL storage only")
+    def test_linux_openssl_round_trip_uses_protected_key_and_detects_tampering(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "credentials.bin"
+            key_path = Path(directory) / "master.key"
+            store = CompanyCredentialStore(path, key_path=key_path)
+            store.save({"token": "linux-private-token", "user_id": 790}, "usr-owner")
+            self.assertNotIn(b"linux-private-token", path.read_bytes())
+            self.assertEqual(store.credentials(), {"token": "linux-private-token", "user_id": 790})
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(key_path.stat().st_mode & 0o777, 0o600)
+            damaged = bytearray(path.read_bytes())
+            damaged[-1] ^= 1
+            path.write_bytes(damaged)
+            with self.assertRaisesRegex(RuntimeError, "完整性校验失败"):
+                store.credentials()
+
     def test_first_admin_becomes_credential_owner(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "credentials.bin"
