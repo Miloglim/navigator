@@ -65,6 +65,54 @@ def login(base_url: str, email: str, password: str) -> dict:
     return {"token": token, "identity": identity}
 
 
+def login_persistent(base_url: str, email: str, password: str) -> dict:
+    """Create a refreshable server-side session for long-lived product access."""
+    data = _request(
+        base_url,
+        "POST",
+        "/api/auth/desktop/login",
+        {"email": email, "password": password},
+        operation="中心账号登录",
+    )
+    token = data.get("token")
+    refresh_token = data.get("refreshToken")
+    identity = data.get("identity")
+    if not isinstance(token, str) or not token or not isinstance(refresh_token, str) or not refresh_token or not isinstance(identity, dict):
+        raise CenterAuthError("中心登录响应无效")
+    return {"token": token, "refresh_token": refresh_token, "identity": identity}
+
+
+def refresh(base_url: str, refresh_token: str) -> dict:
+    data = _request(
+        base_url,
+        "POST",
+        "/api/auth/desktop/refresh",
+        {"refreshToken": refresh_token},
+        operation="中心会话续期",
+    )
+    token = data.get("token")
+    next_refresh = data.get("refreshToken")
+    identity = data.get("identity")
+    if not isinstance(token, str) or not token or not isinstance(next_refresh, str) or not next_refresh or not isinstance(identity, dict):
+        raise CenterAuthError("中心续期响应无效")
+    return {"token": token, "refresh_token": next_refresh, "identity": identity}
+
+
+def logout_refresh(base_url: str, refresh_token: str) -> None:
+    if not refresh_token:
+        return
+    try:
+        _request(
+            base_url,
+            "POST",
+            "/api/auth/desktop/logout",
+            {"refreshToken": refresh_token},
+            operation="中心会话退出",
+        )
+    except CenterAuthError:
+        pass  # Local logout must still remove the browser session when the center is unavailable.
+
+
 def register(base_url: str, email: str, password: str) -> dict:
     data = _request(
         base_url,

@@ -154,6 +154,8 @@ CENTER_SESSION_TOKENS: Dict[str, str] = {}
 CENTER_SESSION_LOCK = RLock()
 SESSION_TTL_SECONDS = 30 * 24 * 60 * 60  # Absolute lifetime from login; ordinary reads do not extend it.
 SESSION_COOKIE = "freight_session"
+CENTER_REFRESH_COOKIE = "freight_center_refresh"
+CENTER_REFRESH_TTL_SECONDS = 15 * 24 * 60 * 60  # Matches the center desktop session idle lifetime.
 LOGIN_LIMITER = LoginLimiter()
 RECOVERY_LIMITER = LoginLimiter()
 DEFAULT_PORT = 8795
@@ -361,12 +363,12 @@ def auth_status(session: Dict[str, Any] | None) -> Dict[str, Any]:
             "user": (account_identity(session) if session else None)}
 
 
-def auth_login(body: Dict[str, Any], client_ip: str) -> tuple[Dict[str, Any], str]:
+def auth_login(body: Dict[str, Any], client_ip: str) -> tuple[Dict[str, Any], str, str]:
     name, password = str(body.get("name") or "").strip(), str(body.get("password") or "")
     if not name or not password:
         raise ValueError("name and password required")
     if CFG.get("center_auth_url"):
-        center = center_auth.login(CFG["center_auth_url"], name.lower(), password)
+        center = center_auth.login_persistent(CFG["center_auth_url"], name.lower(), password)
         access = center_auth.validate(CFG["center_auth_url"], center["token"])["access"]
         c = conn()
         try:
@@ -391,7 +393,7 @@ def auth_login(body: Dict[str, Any], client_ip: str) -> tuple[Dict[str, Any], st
             local = dict(row)
             local["role"] = role
             local["display_name"] = center["identity"].get("displayName") or row["display_name"] or row["name"]
-            return {"ok": True, "user": account_identity(local)}, sid
+            return {"ok": True, "user": account_identity(local)}, sid, center["refresh_token"]
         finally:
             c.close()
     c = conn()
@@ -409,7 +411,7 @@ def auth_login(body: Dict[str, Any], client_ip: str) -> tuple[Dict[str, Any], st
         c.execute("DELETE FROM auth_sessions WHERE expires_at <= ?", (int(time.time()),))
         admin_accounts.record_event(c,row['user_id'],'login_success',row['name'],row['user_id'],{'client_ip':client_ip},manualdb.now_cn())
         c.commit()
-        return {"ok": True, "user": account_identity(row)}, sid
+        return {"ok": True, "user": account_identity(row)}, sid, ""
     finally:
         c.close()
 
@@ -2151,8 +2153,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("X-Frame-Options", "DENY")
-            for k, v in (headers or {}).items():
-                self.send_header(k, v)
+            for k, value in self._response_headers(headers).items():
+                for item in value if isinstance(value, (list, tuple)) else [value]:
+                    self.send_header(k, item)
             self.end_headers()
             self.wfile.write(body)
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
@@ -2174,8 +2177,9 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_header("Cache-Control", "no-store")
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header("X-Frame-Options", "DENY")
-                for key, value in (headers or {}).items():
-                    self.send_header(key, value)
+                for key, value in self._response_headers(headers).items():
+                    for item in value if isinstance(value, (list, tuple)) else [value]:
+                        self.send_header(key, item)
                 self.end_headers()
                 if not head_only:
                     shutil.copyfileobj(source, self.wfile, length=1024 * 1024)
@@ -2201,11 +2205,35 @@ class Handler(BaseHTTPRequestHandler):
         return True
 
     def _session_id(self) -> str:
+        return self._cookie_value(SESSION_COOKIE)
+
+    def _cookie_value(self, name: str) -> str:
         for part in self.headers.get("Cookie", "").split(";"):
             k, _, v = part.strip().partition("=")
-            if k == SESSION_COOKIE:
+            if k == name:
                 return v
         return ""
+
+    def _queue_auth_cookie(self, cookie: str) -> None:
+        pending = getattr(self, "_pending_auth_headers", None)
+        if pending is None:
+            pending = {}
+            self._pending_auth_headers = pending
+        values = pending.setdefault("Set-Cookie", [])
+        values.append(cookie)
+
+    def _response_headers(self, headers: Dict[str, str] | None) -> Dict[str, str | list[str]]:
+        merged: Dict[str, str | list[str]] = dict(headers or {})
+        pending = getattr(self, "_pending_auth_headers", {})
+        self._pending_auth_headers = {}
+        for key, values in pending.items():
+            existing = merged.get(key)
+            if existing is None:
+                merged[key] = list(values)
+            else:
+                prior = list(existing) if isinstance(existing, (list, tuple)) else [existing]
+                merged[key] = [*prior, *values]
+        return merged
 
     def _center_token(self) -> str:
         sid = self._session_id()
@@ -2248,21 +2276,34 @@ class Handler(BaseHTTPRequestHandler):
                 c.commit()
                 return None
             if CFG.get("center_auth_url"):
+                access = None
                 with CENTER_SESSION_LOCK:
                     center_token = CENTER_SESSION_TOKENS.get(sid)
-                if not center_token:
-                    c.execute("DELETE FROM auth_sessions WHERE token_hash=?", (token_hash,))
-                    c.commit()
-                    return None
-                try:
-                    access = center_auth.validate(CFG["center_auth_url"], center_token)
-                    row["display_name"] = access["identity"].get("displayName") or row["display_name"] or row["name"]
-                except center_auth.CenterAuthError:
+                if center_token:
+                    try:
+                        access = center_auth.validate(CFG["center_auth_url"], center_token)
+                    except center_auth.CenterAuthError:
+                        access = None
+                if access is None:
+                    refresh_token = self._cookie_value(CENTER_REFRESH_COOKIE)
+                    if refresh_token:
+                        try:
+                            refreshed = center_auth.refresh(CFG["center_auth_url"], refresh_token)
+                            access = center_auth.validate(CFG["center_auth_url"], refreshed["token"])
+                            with CENTER_SESSION_LOCK:
+                                CENTER_SESSION_TOKENS[sid] = refreshed["token"]
+                            self._queue_auth_cookie(self._center_refresh_cookie(refreshed["refresh_token"])["Set-Cookie"])
+                        except center_auth.CenterAuthError:
+                            access = None
+                if access is None:
                     with CENTER_SESSION_LOCK:
                         CENTER_SESSION_TOKENS.pop(sid, None)
                     c.execute("DELETE FROM auth_sessions WHERE token_hash=?", (token_hash,))
                     c.commit()
+                    self._queue_auth_cookie(self._session_cookie("", expired=True)["Set-Cookie"])
+                    self._queue_auth_cookie(self._center_refresh_cookie("", expired=True)["Set-Cookie"])
                     return None
+                row["display_name"] = access["identity"].get("displayName") or row["display_name"] or row["name"]
             self._set_api_monitor_identity(row)
             return row
         finally:
@@ -2301,6 +2342,10 @@ class Handler(BaseHTTPRequestHandler):
     def _session_cookie(self, sid: str, expired: bool = False) -> Dict[str, str]:
         secure = "; Secure" if self._secure_transport() else ""
         return {"Set-Cookie": f"{SESSION_COOKIE}={sid}; Path=/; Max-Age={0 if expired else SESSION_TTL_SECONDS}; HttpOnly; SameSite=Strict{secure}"}
+
+    def _center_refresh_cookie(self, refresh_token: str, expired: bool = False) -> Dict[str, str]:
+        secure = "; Secure" if self._secure_transport() else ""
+        return {"Set-Cookie": f"{CENTER_REFRESH_COOKIE}={refresh_token}; Path=/api; Max-Age={0 if expired else CENTER_REFRESH_TTL_SECONDS}; HttpOnly; SameSite=Strict{secure}"}
 
     def _image_allowed(self, name: str, session) -> bool:
         if session["role"] == ROLE_ADMIN:
@@ -2358,6 +2403,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, b"", "text/plain")
 
     def do_GET(self) -> None:
+        self._pending_auth_headers = {}
         u = urlparse(self.path)
         p = u.path
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
@@ -2474,6 +2520,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(code, {"ok": False, "error": public_error})
 
     def do_POST(self) -> None:
+        self._pending_auth_headers = {}
         p = urlparse(self.path).path
         self._begin_api_monitor("POST", p)
         authorization = self.headers.get("Authorization", "")
@@ -2565,25 +2612,28 @@ class Handler(BaseHTTPRequestHandler):
                             CENTER_SESSION_TOKENS.pop(sid, None)
                     else:
                         result = ACCOUNT_POST[p](payload, session)
-                return self._json(200, result, self._session_cookie("", expired=True))
+                return self._json(200, result, {"Set-Cookie": [
+                    self._session_cookie("", expired=True)["Set-Cookie"],
+                    self._center_refresh_cookie("", expired=True)["Set-Cookie"],
+                ]})
             if p == "/api/auth/login":
                 with LOGIN_LIMITER.admit(str(payload.get("name") or "").strip(), self.client_address[0]):
-                    result, sid = auth_login(payload, self.client_address[0])
+                    result, sid, center_refresh = auth_login(payload, self.client_address[0])
                 self._set_api_monitor_identity(result.get("user"))
-                return self._json(200, result, self._session_cookie(sid))
+                cookies = [self._session_cookie(sid)["Set-Cookie"]]
+                if center_refresh:
+                    cookies.append(self._center_refresh_cookie(center_refresh)["Set-Cookie"])
+                return self._json(200, result, {"Set-Cookie": cookies})
             if p == "/api/auth/logout":
-                self._session()
-                sid = ""
-                for part in self.headers.get("Cookie", "").split(";"):
-                    k, _, v = part.strip().partition("=")
-                    if k == SESSION_COOKIE:
-                        sid = v
-                        break
+                sid = self._session_id()
+                refresh_token = self._cookie_value(CENTER_REFRESH_COOKIE)
                 if sid:
                     if CFG.get("center_auth_url"):
                         with CENTER_SESSION_LOCK:
                             center_token = CENTER_SESSION_TOKENS.pop(sid, "")
-                        if center_token:
+                        if refresh_token:
+                            center_auth.logout_refresh(CFG["center_auth_url"], refresh_token)
+                        elif center_token:
                             center_auth.logout(CFG["center_auth_url"], center_token)
                     c = conn()
                     try:
@@ -2591,7 +2641,10 @@ class Handler(BaseHTTPRequestHandler):
                         c.commit()
                     finally:
                         c.close()
-                return self._json(200, {"ok": True}, self._session_cookie("", expired=True))
+                return self._json(200, {"ok": True}, {"Set-Cookie": [
+                    self._session_cookie("", expired=True)["Set-Cookie"],
+                    self._center_refresh_cookie("", expired=True)["Set-Cookie"],
+                ]})
             if p == "/api/auth/setup":
                 if self.headers.get("x-push-token") != CFG["token"]:
                     return self._json(401, {"ok": False, "error": "bootstrap token required"})

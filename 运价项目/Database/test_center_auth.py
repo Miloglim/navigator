@@ -83,6 +83,36 @@ class CenterAuthClientTests(unittest.TestCase):
             "email": "new@example.com", "password": "Abc123", "product": "navigator",
         })
 
+    def test_persistent_login_and_refresh_use_desktop_tokens(self):
+        class Response:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                import json
+                return json.dumps({"ok": True, "data": self.payload}).encode("utf-8")
+
+        identity = {"userId": "u1", "email": "user@example.com", "displayName": "User"}
+        with patch.object(center_auth, "urlopen", return_value=Response({
+            "token": "access-1", "refreshToken": "refresh-1", "identity": identity,
+        })) as request:
+            login = center_auth.login_persistent("http://center", "user@example.com", "Abc123")
+        self.assertEqual((login["token"], login["refresh_token"]), ("access-1", "refresh-1"))
+        self.assertTrue(request.call_args.args[0].full_url.endswith("/api/auth/desktop/login"))
+
+        with patch.object(center_auth, "urlopen", return_value=Response({
+            "token": "access-2", "refreshToken": "refresh-2", "identity": identity,
+        })) as request:
+            refreshed = center_auth.refresh("http://center", "refresh-1")
+        self.assertEqual((refreshed["token"], refreshed["refresh_token"]), ("access-2", "refresh-2"))
+        self.assertTrue(request.call_args.args[0].full_url.endswith("/api/auth/desktop/refresh"))
+
     def test_password_change_targets_center_desktop_credential_endpoint(self):
         seen = {}
         class Response:
