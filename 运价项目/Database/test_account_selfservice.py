@@ -104,6 +104,38 @@ def verify_selfservice(case, connect):
 
 
 class SelfServiceTests(unittest.TestCase):
+    def test_center_login_auto_provisions_missing_navigator_business_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            connect=lambda:manualdb.connect(Path(directory)/'center-login.db')
+            center_login={"token":"center-token","refresh_token":"center-refresh","identity":{"displayName":"Jade"}}
+            center_access={"access":{"role":"operator","displayName":"Jade"}}
+            with patch.object(server,'conn',side_effect=connect),patch.dict(server.CFG,{'center_auth_url':'http://center'}),patch.object(server.center_auth,'login_persistent',return_value=center_login),patch.object(server.center_auth,'validate',return_value=center_access),patch.object(server.account_growth,'sync_center'):
+                result,sid,refresh=server.auth_login({'name':'jade@example.invalid','password':'Abc123'},'127.0.0.1')
+            connection=connect()
+            try:
+                row=connection.execute("SELECT user_id,name,display_name,role,active,password_hash FROM operators WHERE name='jade@example.invalid'").fetchone()
+                self.assertEqual((row['display_name'],row['role'],row['active'],row['password_hash']),('Jade','operator',1,None))
+                self.assertTrue(connection.execute("SELECT 1 FROM auth_sessions WHERE operator_name='jade@example.invalid'").fetchone())
+            finally:connection.close()
+            self.assertTrue(result['ok'])
+            self.assertEqual(result['user']['role'],'operator')
+            self.assertTrue(sid)
+            self.assertEqual(refresh,'center-refresh')
+
+    def test_center_login_does_not_reactivate_disabled_local_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            connect=lambda:manualdb.connect(Path(directory)/'center-login-disabled.db')
+            connection=connect()
+            try:
+                connection.execute("INSERT INTO operators(user_id,name,role,active,created_at) VALUES('usr_disabled','disabled@example.invalid','sales',0,'2026-10-22 10:00:00')")
+                connection.commit()
+            finally:connection.close()
+            center_login={"token":"center-token","refresh_token":"center-refresh","identity":{"displayName":"Disabled"}}
+            center_access={"access":{"role":"sales"}}
+            with patch.object(server,'conn',side_effect=connect),patch.dict(server.CFG,{'center_auth_url':'http://center'}),patch.object(server.center_auth,'login_persistent',return_value=center_login),patch.object(server.center_auth,'validate',return_value=center_access):
+                with self.assertRaisesRegex(PermissionError,'本地运价业务身份已停用'):
+                    server.auth_login({'name':'disabled@example.invalid','password':'Abc123'},'127.0.0.1')
+
     def test_center_registration_creates_center_and_local_sales_identity_atomically(self):
         with tempfile.TemporaryDirectory() as directory:
             connect=lambda:manualdb.connect(Path(directory)/'center-registration.db')

@@ -372,12 +372,24 @@ def auth_login(body: Dict[str, Any], client_ip: str) -> tuple[Dict[str, Any], st
         access = center_auth.validate(CFG["center_auth_url"], center["token"])["access"]
         c = conn()
         try:
-            row = c.execute("SELECT o.user_id,o.name,o.display_name,o.role,o.active,o.password_hash,0 AS must_change_password FROM operators o WHERE lower(o.name)=?", (name.lower(),)).fetchone()
-            if not row or not row["active"]:
-                raise PermissionError("中心账号未建立本地运价业务身份")
             role = {"admin": ROLE_ADMIN, "operator": ROLE_OPERATOR, "sales": ROLE_SALES}.get(str(access.get("role") or ""))
             if not role:
                 raise PermissionError("账号没有 Navigator 产品权限")
+            row = c.execute("SELECT o.user_id,o.name,o.display_name,o.role,o.active,o.password_hash,0 AS must_change_password FROM operators o WHERE lower(o.name)=?", (name.lower(),)).fetchone()
+            if row and not row["active"]:
+                raise PermissionError("本地运价业务身份已停用")
+            if not row:
+                user_id = "usr_" + secrets.token_hex(16)
+                display_name = center["identity"].get("displayName") or name
+                c.execute(
+                    "INSERT INTO operators(user_id,name,display_name,role,active,match_mode,created_at) VALUES(?,?,?,?,?,?,?)",
+                    (user_id, name.lower(), display_name, role, 1, "any", manualdb.now_cn()),
+                )
+                admin_accounts.record_event(c, user_id, "account_created", name.lower(), user_id,
+                                            {"identity_source": "milogin-center"}, manualdb.now_cn())
+            else:
+                c.execute("UPDATE operators SET role=?,password_hash=NULL WHERE user_id=?", (role, row["user_id"]))
+            row = c.execute("SELECT o.user_id,o.name,o.display_name,o.role,o.active,o.password_hash,0 AS must_change_password FROM operators o WHERE lower(o.name)=?", (name.lower(),)).fetchone()
             sid = secrets.token_urlsafe(32)
             c.execute("INSERT INTO auth_sessions(token_hash,operator_name,client_ip,expires_at,created_at) VALUES(?,?,?,?,?)",
                       (hashlib.sha256(sid.encode("ascii")).hexdigest(), row["name"], client_ip,
