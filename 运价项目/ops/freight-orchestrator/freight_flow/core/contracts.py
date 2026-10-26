@@ -17,7 +17,7 @@ class Reply(TypedDict, total=False):
     data: object
     error: str
 
-VERSION = "0.11.1"
+VERSION = "0.11.3"
 HOST = "127.0.0.1"
 PORT = 8797
 RUNS_PATH = "/api/runs"
