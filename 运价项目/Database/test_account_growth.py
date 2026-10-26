@@ -14,6 +14,7 @@ import manual_server as server
 from ops import account_growth
 from core.growth_contracts import (GROWTH_APPROVAL_EVENT, GROWTH_APPROVAL_POINTS,
                                    GROWTH_CORRECTION_EVENT, GROWTH_CORRECTION_POINTS,
+                                   GROWTH_DAILY_ACTIVITY_POINTS,
                                    GROWTH_REVIEW_EVENT,GROWTH_RESET_EVENT,
                                    GROWTH_SYNC_TABLE)
 from services.account_growth import GROWTH_XP_PER_CYCLE, map_legacy_xp, summary
@@ -57,6 +58,17 @@ def verify_growth(case, connect):
             case.assertEqual(authorize('POST', '/api/account/growth/search', agent=True)['code'], 'forbidden')
             cookie = call('/api/auth/login', {'name': 'growth-sales', 'password': 'fixture-pass'})[2]['Set-Cookie'].split(';')[0]
             other = call('/api/auth/login', {'name': 'growth-other', 'password': 'fixture-pass'})[2]['Set-Cookie'].split(';')[0]
+            connection = connect()
+            try:
+                growth_user_id = connection.execute("SELECT user_id FROM operators WHERE name='growth-sales'").fetchone()[0]
+            finally:
+                connection.close()
+            with patch.dict(server.CFG, {'center_auth_url': 'https://center.example'}, clear=False), \
+                    patch.object(server.Handler, '_session', return_value={'name': 'growth-sales', 'user_id': growth_user_id, 'role': 'sales'}), \
+                    patch.object(server.Handler, '_center_profile', return_value={'growth': None}), \
+                    patch.object(server.Handler, '_sync_growth_center'):
+                fallback = call('/api/account/growth', cookie=cookie)[1]
+            case.assertEqual(fallback['data']['summary']['total_xp'], 0)
             case.assertEqual(call('/api/account/growth?limit=0', cookie=cookie)[0], 400)
             case.assertEqual(call('/api/account/growth/search', {'user_id': 'someone-else'}, cookie)[0], 400)
             case.assertEqual(call('/api/account/growth/search', {}, cookie,
@@ -165,6 +177,29 @@ class GrowthTests(unittest.TestCase):
                 sent = connection.execute(
                     f"SELECT status,attempts,sent_at FROM {GROWTH_SYNC_TABLE} ORDER BY event_id").fetchall()
                 self.assertTrue(all(row['status'] == 'sent' and row['attempts'] == 1 and row['sent_at'] for row in sent))
+            finally:
+                connection.close()
+
+    def test_bulk_uncapped_approval_events_are_batched_and_idempotent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            connection = manualdb.connect(Path(directory) / 'growth.db')
+            try:
+                connection.execute("INSERT INTO operators(user_id,name,role,active) VALUES('usr_bulk','bulk','operator',1)")
+                subjects = [(GROWTH_APPROVAL_EVENT, f'pending:{index}', GROWTH_APPROVAL_POINTS)
+                            for index in range(250)]
+                first = account_growth.award_business_activity(
+                    connection, 'usr_bulk', GROWTH_REVIEW_EVENT, subjects,
+                    '2026-09-30T09:00:00+08:00')
+                expected = GROWTH_DAILY_ACTIVITY_POINTS + 250 * GROWTH_APPROVAL_POINTS
+                self.assertEqual(first['awarded_points'], expected)
+                second = account_growth.award_business_activity(
+                    connection, 'usr_bulk', GROWTH_REVIEW_EVENT, subjects,
+                    '2026-09-30T10:00:00+08:00')
+                self.assertEqual(second['awarded_points'], 0)
+                count = connection.execute(
+                    'SELECT COUNT(*) FROM account_experience_events WHERE user_id=?',
+                    ('usr_bulk',)).fetchone()[0]
+                self.assertEqual(count, 251)
             finally:
                 connection.close()
 

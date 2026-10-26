@@ -30,7 +30,7 @@ const ctx = vm.createContext({S:{auth:{role:'admin'}},opsOwnership:()=> 'all',op
   showGrowthFeedback(){},
   approveRow:id=>calls.push(['approve',id]),rejectPending:id=>calls.push(['reject',id]),pdSwitchKind(){},
 });
-for (const fn of ['nonUsdPriceCurrency','nonUsdPricePlaceholder','has45HighCube','quote45CornerHtml','pdFitTables','addOverflowTitles','opsIdParams','opsIdSearch','opsIdClear','idChip','idCode','pdConfRank','pdGroupCellsHtml','pdEntryCellsHtml','pdEntriesHtml','pdCardHtml','pdGroupCardHtml','pdSourceView','pdPageSize','renderPdPager','pdViewControls','pdSaveBeforeDisplayChange','pdSetView','loadPending','pdBindGroup','renderPending']) vm.runInContext(source(fn),ctx);
+for (const fn of ['visibleBusinessRemark','currencyCode','currencyPriceText','explicitCurrencyCode','nonUsdPriceCurrency','nonUsdPricePlaceholder','pdRatePriceText','has45HighCube','quote45CornerHtml','pdFitTables','addOverflowTitles','opsIdParams','opsIdSearch','opsIdClear','idChip','idCode','pdConfRank','pdGroupCellsHtml','pdEntryCellsHtml','pdEntriesHtml','pdCardHtml','pdGroupCardHtml','pdSourceView','pdPageSize','renderPdPager','pdViewControls','pdSaveBeforeDisplayChange','pdSetView','loadPending','pdBindGroup','renderPending']) vm.runInContext(source(fn),ctx);
 const record = (id,status='passed',review='awaiting')=>({id,entry_id:'frt_'+id,kind:'rates',check_status:status,review_status:review,errors:[],payload:{'消息ID':'same','起运港':'A','目的港':'B','柜型':'40HQ/HC','海运费USD':id===1?0:1900,'来源群':'<img src=x onerror=alert(1)>'}});
 for (const fn of ['pdNormCtype','pdRatesByRow']) vm.runInContext(source(fn),ctx);
 const products = ['Ipanema','Carioca','Santana'].map((service,i)=>{
@@ -68,7 +68,7 @@ assert.ok(childHeaderSource.includes('idChip(idCode(r), idCode(r))'),'entry iden
   await ctx.renderPending({ok:true,total:103,rows});
   const output=el('pd-cards').innerHTML;
   assert.equal((output.match(/class="pd-entry-row"/g)||[]).length,3,'same container/source records remain independent');
-  assert.ok(output.includes('0<small>USD</small>'),'zero is not missing');
+  assert.ok(output.includes('$0'),'zero is not missing and carries the default currency symbol');
   assert.ok(output.includes('&lt;img'),'source escaped');
   assert.ok(!output.includes('<img src=x'),'source cannot inject markup');
   const variant = record(4);
@@ -175,7 +175,7 @@ assert.ok(childHeaderSource.includes('idChip(idCode(r), idCode(r))'),'entry iden
   }});
   vm.runInContext(source('pdBulkCount'),bulkCtx);
   await bulkCtx.pdBulkCount();
-  assert.equal(bulkButton.textContent,'一键放行整组已通过 (28 条)');
+  assert.equal(bulkButton.textContent,'一键放行整组全通过 (28 条)');
   assert.equal(bulkButton.disabled,false);
   assert.equal(bulkUrls.length,2,'only rates and space count; group suggestions excluded');
   assert.ok(bulkUrls.every(url=>new URL(url,'http://fixture').searchParams.get('whole_passed')==='1'),'count uses complete-source gate');

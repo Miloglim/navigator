@@ -1,10 +1,11 @@
 {
- "_comment": "要爬取的钉钉群清单。每项：name(群名,会写进记录的 来源群) · cid(会话ID, dws chat search 查) · slug(脚本内短名) · default_pol(群无明示起运港时的兜底港/港群名) · spec_dir(该群业务规范目录，Agent 判定前必读，由 spec_index.py 按此路由) · profile(承运/常见航线/发送人画像, 供 LLM 判定与模板参考)。运行态目录不在此,见 ledger_contract.json.runtime_dir。",
+ "_comment": "要爬取的钉钉群清单。每项：name(群名,会写进记录的 来源群) · cid(会话ID, dws chat search 查) · slug(脚本内短名) · shard(分片大组 A/B/C/D，按航线与单日频率均衡拆片错峰运行；pipeline 用 --shard 过滤，未带则全量) · default_pol(群无明示起运港时的兜底港/港群名) · spec_dir(该群业务规范目录，Agent 判定前必读，由 spec_index.py 按此路由) · profile(承运/常见航线/发送人画像, 供 LLM 判定与模板参考)。运行态目录不在此,见 ledger_contract.json.runtime_dir。",
  "groups": [
   {
    "name": "CMA/EMC/PIL交流群",
    "cid": "cidzQjqwS4YSXyWr7fceE2KVA==",
    "slug": "cma_emc_pil",
+   "shard": "A",
    "spec_dir": "references/群聊规范/CMA+EMC+PIL交流群",
    "default_pol": "华南基本港",
    "profile": {
@@ -29,6 +30,7 @@
    "name": "天津拉美询价群",
    "cid": "cidFt6iQAGJrcefNu394z//Gw==",
    "slug": "tianjin_latam",
+   "shard": "A",
    "spec_dir": "references/群聊规范/天津拉美询价群",
    "default_pol": "天津",
    "profile": {
@@ -55,6 +57,7 @@
    "name": "COSCO/HMM/MSK/OOCL交流群",
    "cid": "cidH85zQAbLlbEF5BFM7mxJPg==",
    "slug": "cosco_hmm_msk_oocl",
+   "shard": "B",
    "spec_dir": "references/群聊规范/COSCO+HMM+MSK+OOCL交流群",
    "default_pol": "华南基本港",
    "profile": {
@@ -85,6 +88,7 @@
    "name": "华南-拉美",
    "cid": "cid1s7ja14jUIbYXIZO9Tj1gA==",
    "slug": "huanan_latam",
+   "shard": "B",
    "spec_dir": "references/群聊规范/华南-拉美",
    "default_pol": "华南基本港",
    "profile": {
@@ -116,6 +120,7 @@
    "name": "ONE/ZIM/WHL/HPL/CSP 交流群",
    "cid": "cidEiSUpDr9+wINkGmQ/8ggpA==",
    "slug": "one_zim_hpl_csp",
+   "shard": "B",
    "spec_dir": "references/群聊规范/ONE+ZIM+WHL+HPL+CSP交流群",
    "default_pol": "华南基本港",
    "profile": {
@@ -146,6 +151,7 @@
    "name": "青岛拉美运价（海外）",
    "cid": "cid4Z20hJsZekaGeLu1wu4mng==",
    "slug": "qingdao_latam",
+   "shard": "A",
    "spec_dir": "references/群聊规范/青岛拉美运价（海外）",
    "default_pol": "青岛",
    "profile": {
@@ -173,6 +179,7 @@
    "name": "宁波舱位滚动更新群",
    "cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
    "slug": "ningbo_space",
+   "shard": "B",
    "spec_dir": "references/群聊规范/宁波舱位滚动更新群",
    "default_pol": "宁波",
    "profile": {
@@ -206,6 +213,7 @@
    "name": "美加线销售天团",
    "cid": "cidysxmcSWynwvefzoEYibQPg==",
    "slug": "meijia_sales",
+   "shard": "A",
    "spec_dir": "references/群聊规范/美加线销售天团",
    "default_pol": "华南基本港",
    "profile": {
@@ -228,6 +236,7 @@
    "name": "大连-拉美/美加",
    "cid": "cidYnK3GzzuKtkKjUw5xkvVhA==",
    "slug": "dalian_latam",
+   "shard": "B",
    "spec_dir": "references/群聊规范/大连-拉美+美加",
    "default_pol": "大连",
    "profile": {
@@ -251,6 +260,7 @@
    "name": "土耳其价格更新",
    "cid": "cidycQtZjJla+WxNY9xTK6BwQ==",
    "slug": "turkey_price",
+   "shard": "A",
    "spec_dir": "references/群聊规范/土耳其价格更新",
    "default_pol": "华南基本港",
    "profile": {
@@ -273,12 +283,14 @@
     "templates": [],
     "image_expect": "price_table",
     "forwards_to": []
-   }
+   },
+   "spec_base": "references/群聊规范/_杜佳仪系共享"
   },
   {
    "name": "欧洲价格更新",
    "cid": "cidTKlF4IcDiQonoNQY3qkHow==",
    "slug": "europe_price",
+   "shard": "A",
    "spec_dir": "references/群聊规范/欧洲价格更新",
    "default_pol": "全国基本港",
    "profile": {
@@ -297,6 +309,316 @@
      "杜佳仪 Alby": "全国口岸→欧洲 套约/现舱报价（CMA/MSC/MSK；GDANSK/Rotterdam/Hamburg/Southampton/Lisboa/Leixoes）"
     },
     "templates": [],
+    "image_expect": "price_table|space",
+    "forwards_to": []
+   },
+   "spec_base": "references/群聊规范/_杜佳仪系共享"
+  },
+  {
+   "name": "地西+地黑价格更新",
+   "cid": "cidU3K4GSO+bHPhFklCHMnZQw==",
+   "slug": "dixi_hei_price",
+   "shard": "A",
+   "spec_dir": "references/群聊规范/地西+地黑价格更新",
+   "spec_base": "references/群聊规范/_杜佳仪系共享",
+   "default_pol": "全国基本港",
+   "profile": {
+    "carriers": [],
+    "routes": [
+     "地西",
+     "黑海"
+    ],
+    "senders": {
+     "杜佳仪 Alby": "地西/黑海 套约与现舱报价（与土耳其/欧洲群同一航管，格式套用共享规范）"
+    },
+    "templates": [],
+    "image_expect": "price_table",
+    "forwards_to": []
+   }
+  },
+  {
+   "name": "厦门运价总群",
+   "cid": "cidjovIVW4/c/IPqL1m+RFLgg==",
+   "slug": "xiamen_freight",
+   "shard": "B",
+   "spec_dir": "references/群聊规范/厦门运价总群",
+   "default_pol": "厦门",
+   "profile": {
+    "carriers": [
+     "COSCO",
+     "CMA",
+     "MSK",
+     "ESL",
+     "OOCL",
+     "EMC"
+    ],
+    "routes": [
+     "红海",
+     "印度",
+     "南美东",
+     "南美西",
+     "墨西哥",
+     "欧基港",
+     "北欧",
+     "地中海",
+     "美西",
+     "美东"
+    ],
+    "senders": {
+     "傅秋泓": "厦门/福州/泉州出运的文字运价、现舱和船期信息",
+     "郭虹": "CMA/COSCO/ESL/OOCL/EMC价格与舱位信息、图片价格表"
+    },
+    "templates": [
+     "rate_text",
+     "space_text",
+     "price_table",
+     "space_guide"
+    ],
+    "image_expect": "price_table|space",
+    "forwards_to": []
+   }
+  },
+  {
+   "name": "北埃及价格更新",
+   "cid": "ciddW/ROT0bCoK40o/mJ14Lvg==",
+   "slug": "north_egypt_price",
+   "shard": "B",
+   "spec_dir": "references/群聊规范/北埃及价格更新",
+   "spec_base": "references/群聊规范/_杜佳仪系共享",
+   "default_pol": "全国基本港",
+   "profile": {
+    "carriers": ["CMA", "COSCO", "EMC", "HMM", "HPL", "MSK", "ONE", "WHL", "YML"],
+    "routes": ["北非", "地中海", "地东"],
+    "senders": {
+     "杜佳仪 Alby": "北埃及/地中海多起运港报价、图片表、现舱和附加费信息"
+    },
+    "templates": [],
+    "image_expect": "price_table|space",
+    "forwards_to": []
+   }
+  },
+  {
+   "name": "天津-MESA",
+   "cid": "cidmq7zdmlC1vM8xTjxpc4WsQ==",
+   "slug": "tianjin_mesa",
+   "shard": "C",
+   "spec_dir": "references/群聊规范/天津-MESA",
+   "default_pol": "天津",
+   "profile": {
+    "carriers": ["OOCL", "SITC", "TSL"],
+    "routes": ["中东", "印度", "红海"],
+    "senders": {
+     "张楠": "TSLINE/OOCL/SITC图片指导报价与成本、中东印巴调价和船期"
+    },
+    "templates": ["price_table", "rate_text", "sailing_schedule"],
+    "image_expect": "price_table|sailing_schedule",
+    "forwards_to": []
+   }
+  },
+  {
+   "name": "宁波中印红询价群",
+   "cid": "cid0ttElrzsvmAzToPhHGgQYw==",
+   "slug": "ningbo_cimred",
+   "shard": "C",
+   "spec_dir": "references/群聊规范/宁波中印红询价群",
+   "default_pol": "宁波",
+   "profile": {
+    "carriers": ["中谷", "OOCL", "ESL", "MSC", "CMA", "CUL"],
+    "routes": ["印度", "中东", "红海"],
+    "senders": {
+     "施伯达  Jack—15336635369": "中谷印西/中东、OOCL印东与MSC中东报价",
+     "车姣  Cherry-13216604815车姣": "ESL红海加班船与CMA中东现舱"
+    },
+    "templates": ["rate_text", "space_text"],
+    "image_expect": "none",
+    "forwards_to": []
+   }
+  },
+  {
+   "name": "大连&青岛中印红",
+   "cid": "ciduI/WA4rdgKgFsmf6wxqflw==",
+   "slug": "dalian_qingdao_cimred",
+   "shard": "C",
+   "spec_dir": "references/群聊规范/大连+青岛中印红",
+   "default_pol": "",
+   "profile": {
+    "carriers": ["MSC"],
+    "routes": ["中东", "印巴"],
+    "senders": {
+     "宋文静": "MSC大连/青岛中东印巴周度价格与PDF文件"
+    },
+    "templates": ["rate_text", "price_table"],
+    "image_expect": "price_table",
+    "forwards_to": []
+   }
+  },
+  {
+   "name": "华南-中印红航线",
+   "cid": "cidQqEzlUURQfS2trbZpyIFWA==",
+   "slug": "huanan_cimred",
+   "shard": "C",
+   "spec_dir": "references/群聊规范/华南-中印红航线",
+   "default_pol": "华南基本港",
+   "profile": {
+    "carriers": ["OOCL", "CHENXIN", "ECON", "WHL", "MSC", "KMTC", "SITC"],
+    "routes": ["红海", "印巴", "中东"],
+    "senders": {
+     "Jelin（华南）李盈，不是上海！！": "华南中印红成本、指导卖价、现舱和多船司文字/图片报价"
+    },
+    "templates": ["rate_text", "space_text", "price_table"],
+    "image_expect": "price_table|space",
+    "forwards_to": []
+   }
+  },
+  {
+   "name": "MESA-青岛中印红询价群",
+   "cid": "cidxAQkHiaz8ujnZzqi0f8Uyg==",
+   "slug": "mesa_qingdao_cimred",
+   "shard": "C",
+   "spec_dir": "references/群聊规范/MESA-青岛中印红询价群",
+   "default_pol": "青岛",
+   "profile": {
+    "carriers": ["WHL", "SITC", "ESL", "BWL"],
+    "routes": ["印度"],
+    "senders": {
+     "陈惠琳": "青岛到印度报价、船期与超重条件",
+     "杨恺怡": "青岛出运印度询盘",
+     "魏文奕": "青岛出运印度询盘",
+     "李灵芳": "青岛出运印度询盘"
+    },
+    "templates": ["quote_reply", "inquiry"],
+    "image_expect": "none",
+    "forwards_to": []
+   }
+  },
+  {
+   "name": "MESA-宁波中印红询价群",
+   "cid": "cidvKBquQs1Qdk65ITlgB2G6A==",
+   "slug": "mesa_ningbo_cimred",
+   "shard": "C",
+   "spec_dir": "references/群聊规范/MESA-宁波中印红询价群",
+   "default_pol": "宁波",
+   "profile": {
+    "carriers": ["SSL", "IAL"],
+    "routes": ["印度", "孟加拉"],
+    "senders": {
+     "陈惠琳": "宁波到吉大港/金奈报价与船期",
+     "蔡梓彤(violet)": "宁波出运印度孟加拉询盘",
+     "杨恺怡": "宁波出运金奈询盘"
+    },
+    "templates": ["quote_reply", "inquiry"],
+    "image_expect": "none",
+    "forwards_to": []
+   }
+  },
+  {
+   "name": "上海中印红",
+   "cid": "cidYN3jjoCKhTCsamLi1tMCJA==",
+   "slug": "shanghai_cimred",
+   "shard": "C",
+   "spec_dir": "references/群聊规范/上海中印红",
+   "default_pol": "上海",
+   "profile": {
+    "carriers": ["OSL", "EMC", "YML", "ESL", "HMM", "WHL", "CMA"],
+    "routes": ["红海", "印巴", "中东"],
+    "senders": {
+     "方丹丹Rita": "上海红海、印巴和中东文字报价、现舱及船期",
+     "张佳伟": "上海印巴/红海/中东价格和现舱"
+    },
+    "templates": ["rate_text", "space_text", "price_table"],
+    "image_expect": "space",
+    "forwards_to": []
+   }
+  },
+  {
+   "name": "东南亚 -- 埃及&土耳其",
+   "cid": "cidFpSlqxXNpWrnanlFlY5xNQ==",
+   "slug": "seasia_egypt_turkey",
+   "shard": "D",
+   "spec_dir": "references/群聊规范/东南亚-埃及+土耳其",
+   "default_pol": "",
+   "profile": {
+    "carriers": ["EMC"],
+    "routes": ["埃及", "土耳其", "地东"],
+    "senders": {
+     "Justin": "马来西亚起运至埃及和土耳其的EMC周度报价",
+     "王敏钰Ruby19047721203": "马来西亚起运的地东货盘询价"
+    },
+    "templates": ["rate_text", "inquiry"],
+    "image_expect": "none",
+    "forwards_to": []
+   }
+  },
+  {
+   "name": "厦门-东南亚运价群",
+   "cid": "cidsZ92eImWA4g7pHxh17xKeA==",
+   "slug": "xiamen_seasia",
+   "shard": "D",
+   "spec_dir": "references/群聊规范/厦门-东南亚运价群",
+   "default_pol": "厦门",
+   "profile": {
+    "carriers": ["MSC"],
+    "routes": ["东南亚"],
+    "senders": {
+     "傅秋泓": "厦门东南亚成本、指导报价、现舱和价格表"
+    },
+    "templates": ["rate_text", "space_text", "price_table"],
+    "image_expect": "price_table|space",
+    "forwards_to": []
+   }
+  },
+  {
+   "name": "青岛-东南亚群",
+   "cid": "cideQAtGo8du1OoBTcWhBl3EQ==",
+   "slug": "qingdao_seasia",
+   "shard": "D",
+   "spec_dir": "references/群聊规范/青岛-东南亚群",
+   "default_pol": "青岛",
+   "profile": {
+    "carriers": ["YML", "ASL"],
+    "routes": ["台湾", "菲律宾"],
+    "senders": {
+     "Flora 陈孟": "青岛至高雄、马尼拉现舱和船期"
+    },
+    "templates": ["space_text", "sailing_schedule"],
+    "image_expect": "none",
+    "forwards_to": []
+   }
+  },
+  {
+   "name": "宁波--东南亚询价群",
+   "cid": "ciduMjHNFz3Kv8WdaVL15URuQ==",
+   "slug": "ningbo_seasia",
+   "shard": "D",
+   "spec_dir": "references/群聊规范/宁波-东南亚询价群",
+   "default_pol": "宁波",
+   "profile": {
+    "carriers": ["SNL", "CNC", "HMM", "MCC", "SITC", "CPS", "WHL"],
+    "routes": ["菲律宾", "孟加拉"],
+    "senders": {
+     "陈芳芳": "宁波至马尼拉、吉大港周度报价和船期",
+     "车姣  Cherry-13216604815车姣": "东南亚附加费与船司通知"
+    },
+    "templates": ["rate_text", "price_table", "notice"],
+    "image_expect": "price_table",
+    "forwards_to": []
+   }
+  },
+  {
+   "name": "东南亚航线-华南航销群",
+   "cid": "cid7WYUoHF/1wEDsymQiHqwxQ==",
+   "slug": "huanan_seasia_sales",
+   "shard": "D",
+   "spec_dir": "references/群聊规范/东南亚航线-华南航销群",
+   "default_pol": "华南基本港",
+   "profile": {
+    "carriers": ["SITC", "WHL", "YML"],
+    "routes": ["越南", "泰国", "印尼", "东南亚"],
+    "senders": {
+     "詹美珊": "华南东南亚成本与现舱",
+     "韩彧jenny": "WHL越南线和YML泰国印尼运价及船期"
+    },
+    "templates": ["rate_text", "space_text", "price_table"],
     "image_expect": "price_table|space",
     "forwards_to": []
    }

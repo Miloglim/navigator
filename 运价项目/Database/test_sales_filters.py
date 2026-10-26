@@ -25,6 +25,11 @@ def verify_sales_filters(test, connection, master):
         connection.execute(
             "INSERT INTO freight_items (" + ",".join(data) + ") VALUES ("
             + ",".join("?" for _ in data) + ")", tuple(data.values()))
+    connection.execute(
+        "UPDATE freight_items SET message_text=?, remark=? WHERE content_key=?",
+        ("ASUNCION addon +1000/+1200", "RIO GRANDE addon +USD250/500", "future"))
+    connection.execute("UPDATE freight_items SET pod=?,message_text=? WHERE content_key=?",
+                       ("Paranagua", "Santos feeder transfer", "nor"))
     connection.commit()
 
     def keys(q):
@@ -42,6 +47,15 @@ def verify_sales_filters(test, connection, master):
     test.assertEqual(keys({"carrier": "CMA,MSC"}), {r[0] for r in rows})
     test.assertEqual(keys({"carrier": "MSC,MAERSK"}), set())
     test.assertEqual(keys({"route": "南美"}), set())
+    test.assertEqual(keys({"q": "Santos"}), {r[0] for r in rows})
+    for term in ("Asuncion", "asuncion", "Asunción", "ASUNCIÓN", "Rio Grande"):
+        test.assertEqual(keys({"q": term}), {"future"}, term)
+    test.assertEqual(keys({"pod": "Asuncion"}), set(), "port filters must not fall back to whole-message text")
+    test.assertEqual(keys({"pol": "Asunción"}), set(), "port filters must not fall back to whole-message text")
+    test.assertEqual(keys({"pod": "Asuncion", "global_query": "1"}), {"future"})
+    test.assertEqual(keys({"pol": "Asunción", "global_query": "1"}), {"future"})
+    test.assertEqual(keys({"pod": "Santos"}), {"expired", "boundary", "future", "open"},
+                     "port filters must ignore sibling text in message_text")
     preferred = {"display_mode": "preferred", "display_routes": json.dumps(["南美东"]),
                  "display_groups": json.dumps(["测试群"], ensure_ascii=False)}
     test.assertEqual(keys(preferred), {"expired", "boundary", "future", "open"})
@@ -53,6 +67,33 @@ def verify_sales_filters(test, connection, master):
                      {row[0] for row in rows})
     with test.assertRaises(ValueError):
         keys({"display_mode": "preferred", "display_groups": '"测试群"'})
+    multi_ports = (("multi-pair-a", "Shanghai", "Santos"), ("multi-pair-b", "Ningbo", "Paranagua"))
+    for key, pol, pod in multi_ports:
+        data = dict(content_key=key, record_type="rates", container_type="20GP",
+                    valid_from="2026-10-01", valid_to="2026-10-31", route="测试多港",
+                    source_group="测试群", carrier="CMA", pol=pol, pod=pod,
+                    message_time="2026-09-28 10:00:00", status="当前生效")
+        if "entry_id" in columns:
+            data["entry_id"] = "sales-test-" + key
+        connection.execute(
+            "INSERT INTO freight_items (" + ",".join(data) + ") VALUES ("
+            + ",".join("?" for _ in data) + ")", tuple(data.values()))
+    connection.commit()
+    connection.execute("UPDATE freight_items SET message_text=? WHERE content_key=?",
+                       ("Shanghai Santos alternate ports", "multi-pair-b"))
+    connection.commit()
+    test.assertEqual(keys({"pol": "Shanghai,Ningbo", "pod": "Santos,Paranagua"}),
+                     {"multi-pair-a", "multi-pair-b"},
+                     "multiple POL and POD values must OR within each side and AND across sides")
+    test.assertEqual(keys({"pol": "Shanghai", "pod": "Santos"}), {"multi-pair-a"},
+                     "sibling text in the same message must not leak through port filters")
+    test.assertEqual(keys({"pol": "Shanghai", "pod": "Santos", "global_query": "1"}),
+                     {"multi-pair-a", "multi-pair-b"},
+                     "global query explicitly includes sibling message text")
+    with test.assertRaisesRegex(ValueError, "起运港最多选择 3 个"):
+        keys({"pol": "Shanghai,Ningbo,Santos,Paranagua"})
+    with test.assertRaisesRegex(ValueError, "目的港最多选择 3 个"):
+        keys({"pod": "Santos,Paranagua,Shanghai,Ningbo"})
     folded = manualdb.query_grouped(connection, master, "rates",
                                     {"ctype": "40HQ/HC", "valid_since": "2026-09-28"})
     test.assertEqual(folded["total"], 1)

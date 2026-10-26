@@ -1,6 +1,6 @@
 """Persistence adapter for user-scoped notifications."""
 import uuid
-from core.contracts import ok
+from core.contracts import ADMIN_ROLES, ROLE_ADMIN, ok
 from core.notification_contracts import (NOTIFICATION_TABLE, NOTICE_PIN_REQUEST_KIND,
     NOTICE_PIN_RESULT_KIND, PASSWORD_RESET_REQUEST_KIND)
 from services.notifications import action_request, event_fields, page_request, payload, read_request
@@ -23,9 +23,9 @@ def _insert(conn, recipient_ids, event, stamp):
 
 
 def notify_role(conn, role, event, stamp):
+    roles = tuple(ADMIN_ROLES) if role == ROLE_ADMIN else (role,)
     recipients = [row[0] for row in conn.execute(
-        "SELECT user_id FROM operators WHERE role=? AND active=1 AND password_hash IS NOT NULL AND password_hash<>''",
-        (role,))]
+        "SELECT user_id FROM operators WHERE role IN (" + ",".join("?" for _ in roles) + ") AND active=1", roles)]
     return _insert(conn, recipients, event, stamp)
 
 

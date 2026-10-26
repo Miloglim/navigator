@@ -63,6 +63,8 @@ def verify_account_http(case, connection_factory):
                 case.assertEqual(request(LIVENESS_ROUTE)[0], 200)
                 for path in ("/api/rates", "/api/stats", "/api/bootstrap", "/api/master", "/images/unknown.png"):
                     case.assertEqual(request(path)[0], 401, path)
+                case.assertEqual(request("/api/message-board")[0], 404)
+                case.assertEqual(request("/api/message-board/create", {"content": "development only"})[0], 404)
                 case.assertEqual(request("/api/validate", {})[0], 401)
                 cookies = {}
                 identities = {}
@@ -192,6 +194,201 @@ def verify_account_http(case, connection_factory):
 
 
 class AccountAuthTests(unittest.TestCase):
+    def test_center_auth_status_never_checks_local_admin_setup(self):
+        with patch.dict(manual_server.CFG, {"center_auth_url":"https://center.example","dev_mode":False}, clear=False), \
+                patch.object(manual_server, "active_admin_exists") as local_admin:
+            status = manual_server.auth_status(None)
+        local_admin.assert_not_called()
+        self.assertEqual(status["auth_mode"], "center")
+        self.assertFalse(status["setup_required"])
+        self.assertFalse(status["authenticated"])
+        self.assertFalse(status["features"]["message_board"])
+
+    def test_local_auth_status_keeps_first_admin_setup(self):
+        with patch.dict(manual_server.CFG, {"center_auth_url":""}, clear=False), \
+                patch.object(manual_server, "active_admin_exists", return_value=False):
+            status = manual_server.auth_status(None)
+        self.assertEqual(status["auth_mode"], "local")
+        self.assertTrue(status["setup_required"])
+
+    def test_dev_mode_is_the_only_message_board_feature_switch(self):
+        with patch.dict(manual_server.CFG, {"center_auth_url":"https://center.example","dev_mode":True}, clear=False):
+            self.assertTrue(manual_server.auth_status(None)["features"]["message_board"])
+        with patch.dict(manual_server.CFG, {"center_auth_url":"https://center.example","dev_mode":False}, clear=False):
+            self.assertFalse(manual_server.auth_status(None)["features"]["message_board"])
+
+    def test_center_mode_rejects_local_admin_setup(self):
+        with patch.dict(manual_server.CFG, {"center_auth_url":"https://center.example"}, clear=False):
+            with self.assertRaisesRegex(PermissionError, "中心管理库"):
+                manual_server.auth_setup({"name":"local-admin","password":"fixture-pass"})
+
+    def test_center_outage_preserves_existing_browser_session(self):
+        sid = "center-outage-session"
+        with tempfile.TemporaryDirectory(prefix="freight-center-outage-") as directory:
+            database = Path(directory) / "isolated.db"
+            connection = manualdb.connect(database)
+            try:
+                manualdb.save_operator(connection, {"name": "center-user", "role": "admin"})
+                connection.execute(
+                    "INSERT INTO auth_sessions(token_hash,operator_name,client_ip,expires_at,created_at) VALUES(?,?,?,?,?)",
+                    (hashlib.sha256(sid.encode("ascii")).hexdigest(), "center-user", "127.0.0.1",
+                     int(time.time()) + 1000, "fixture"))
+                connection.commit()
+            finally:
+                connection.close()
+            handler = manual_server.Handler.__new__(manual_server.Handler)
+            handler.headers = {"Cookie": f"freight_session={sid}; freight_center_refresh=refresh-token"}
+            handler._pending_auth_headers = {}
+            manual_server.CENTER_SESSION_TOKENS.pop(sid, None)
+            try:
+                with patch.dict(manual_server.CFG, {"center_auth_url": "https://center.example"}, clear=False), \
+                        patch.object(manual_server, "conn", side_effect=lambda: manualdb.connect(database)), \
+                        patch.object(manual_server.center_auth, "refresh",
+                                     side_effect=manual_server.center_auth.CenterAuthUnavailable("中心会话续期暂不可用")):
+                    with self.assertRaises(manual_server.center_auth.CenterAuthUnavailable):
+                        handler._session()
+                connection = manualdb.connect(database)
+                try:
+                    count = connection.execute("SELECT COUNT(*) FROM auth_sessions WHERE token_hash=?",
+                                               (hashlib.sha256(sid.encode("ascii")).hexdigest(),)).fetchone()[0]
+                finally:
+                    connection.close()
+                self.assertEqual(count, 1)
+            finally:
+                manual_server.CENTER_SESSION_TOKENS.pop(sid, None)
+
+    def test_concurrent_center_refresh_consumes_rotating_token_once(self):
+        sid = "center-refresh-session"
+        with tempfile.TemporaryDirectory(prefix="freight-center-refresh-") as directory:
+            database = Path(directory) / "isolated.db"
+            connection = manualdb.connect(database)
+            try:
+                manualdb.save_operator(connection, {"name": "center-user", "role": "admin"})
+                connection.execute(
+                    "INSERT INTO auth_sessions(token_hash,operator_name,client_ip,expires_at,created_at) VALUES(?,?,?,?,?)",
+                    (hashlib.sha256(sid.encode("ascii")).hexdigest(), "center-user", "127.0.0.1",
+                     int(time.time()) + 1000, "fixture"))
+                connection.commit()
+            finally:
+                connection.close()
+
+            refresh_calls = []
+            def refresh(_base_url, _refresh_token):
+                refresh_calls.append(_refresh_token)
+                time.sleep(0.05)
+                return {"token": "new-access", "refresh_token": "new-refresh", "identity": {"displayName": "Center User"}}
+            def validate(_base_url, token):
+                if token != "new-access":
+                    raise manual_server.center_auth.CenterAuthError("access expired")
+                return {"identity": {"displayName": "Center User"}, "access": {"userId": "u1", "role": "superadmin"}}
+
+            results = []
+            def run_session():
+                handler = manual_server.Handler.__new__(manual_server.Handler)
+                handler.headers = {"Cookie": f"freight_session={sid}; freight_center_refresh=refresh-token"}
+                handler.connection = object()
+                handler.client_address = ("127.0.0.1", 0)
+                handler._pending_auth_headers = {}
+                try:
+                    results.append(handler._session())
+                except Exception as error:  # noqa: BLE001 - surface thread failures in the assertion
+                    results.append(error)
+
+            manual_server.CENTER_SESSION_TOKENS.pop(sid, None)
+            try:
+                with patch.dict(manual_server.CFG, {"center_auth_url": "https://center.example"}, clear=False), \
+                        patch.object(manual_server, "conn", side_effect=lambda: manualdb.connect(database)), \
+                        patch.object(manual_server.center_auth, "refresh", side_effect=refresh), \
+                        patch.object(manual_server.center_auth, "validate", side_effect=validate):
+                    threads = [threading.Thread(target=run_session) for _ in range(2)]
+                    for thread in threads:
+                        thread.start()
+                    for thread in threads:
+                        thread.join(timeout=10)
+                self.assertEqual(refresh_calls, ["refresh-token"])
+                self.assertEqual(len(results), 2)
+                self.assertTrue(all(isinstance(result, dict) for result in results), results)
+                connection = manualdb.connect(database)
+                try:
+                    role = connection.execute("SELECT role FROM operators WHERE name='center-user'").fetchone()["role"]
+                finally:
+                    connection.close()
+                self.assertEqual(role, "superadmin")
+            finally:
+                manual_server.CENTER_SESSION_TOKENS.pop(sid, None)
+
+    def test_center_auth_cache_only_serves_allowlisted_reads(self):
+        sid = "center-auth-cache-session"
+        with tempfile.TemporaryDirectory(prefix="freight-center-cache-") as directory:
+            database = Path(directory) / "isolated.db"
+            connection = manualdb.connect(database)
+            try:
+                manualdb.save_operator(connection, {"name": "center-user", "role": "sales"})
+                connection.execute(
+                    "INSERT INTO auth_sessions(token_hash,operator_name,client_ip,expires_at,created_at) VALUES(?,?,?,?,?)",
+                    (hashlib.sha256(sid.encode("ascii")).hexdigest(), "center-user", "127.0.0.1",
+                     int(time.time()) + 1000, "fixture"))
+                connection.commit()
+            finally:
+                connection.close()
+            handler = manual_server.Handler.__new__(manual_server.Handler)
+            handler.headers = {"Cookie": f"freight_session={sid}"}
+            handler.connection = object()
+            handler.client_address = ("127.0.0.1", 0)
+            handler._pending_auth_headers = {}
+            access = {"identity": {"displayName": "Center User"}, "access": {"userId": "u1", "role": "admin"}}
+            manual_server.CENTER_SESSION_TOKENS[sid] = "center-token"
+            manual_server.CENTER_AUTH_CACHE.pop(sid, None)
+            try:
+                with patch.dict(manual_server.CFG, {"center_auth_url": "https://center.example"}, clear=False), \
+                        patch.object(manual_server, "conn", side_effect=lambda: manualdb.connect(database)), \
+                        patch.object(manual_server.center_auth, "validate", return_value=access) as validate:
+                    self.assertEqual(handler._session(cache_auth=True)["role"], "admin")
+                    self.assertEqual(handler._session(cache_auth=True)["role"], "admin")
+                    self.assertEqual(validate.call_count, 1)
+                    manual_server.CENTER_AUTH_CACHE[sid] = (time.monotonic() - 1, "center-token", access)
+                    self.assertEqual(handler._session(cache_auth=True)["role"], "admin")
+                    self.assertEqual(validate.call_count, 2)
+                    self.assertEqual(handler._session()["role"], "admin")
+                    self.assertEqual(validate.call_count, 3)
+                self.assertIn("/api/rates", manual_server.CENTER_AUTH_CACHED_READ_ROUTES)
+                self.assertNotIn("/api/admin/company-credentials", manual_server.CENTER_AUTH_CACHED_READ_ROUTES)
+                self.assertNotIn("/api/operator/save", manual_server.CENTER_AUTH_CACHED_READ_ROUTES)
+            finally:
+                manual_server.CENTER_SESSION_TOKENS.pop(sid, None)
+                manual_server.CENTER_AUTH_CACHE.pop(sid, None)
+
+    def test_fonts_are_self_hosted_and_cacheable(self):
+        web_root = Path(__file__).resolve().parent / "web"
+        source = (web_root / "index.html").read_text(encoding="utf-8")
+        self.assertNotIn("fonts.googleapis.com", source)
+        self.assertIn("/assets/fonts/outfit-latin-wght-normal.woff2", source)
+        self.assertTrue((web_root / "fonts" / "outfit-latin-wght-normal.woff2").is_file())
+        self.assertTrue((web_root / "fonts" / "ibm-plex-mono-latin-400-normal.woff2").is_file())
+
+        server = manual_server.FreightHTTPServer(("127.0.0.1", 0), manual_server.Handler)
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        try:
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{server.server_port}/assets/fonts/outfit-latin-wght-normal.woff2")
+            with urllib.request.urlopen(request, timeout=10) as response:
+                self.assertEqual(response.status, 200)
+                self.assertEqual(response.headers["Content-Type"], "font/woff2")
+                self.assertIn("immutable", response.headers["Cache-Control"])
+                self.assertEqual(response.read(4), b"wOF2")
+        finally:
+            server.shutdown()
+            thread.join(timeout=10)
+            server.server_close()
+
+    def test_web_auth_has_no_admin_initialization_entry(self):
+        source = (Path(__file__).resolve().parent / "web" / "index.html").read_text(encoding="utf-8")
+        self.assertNotIn("初始化管理员", source)
+        self.assertNotIn("/api/auth/setup", source)
+        self.assertNotIn("bootstrapToken", source)
+        self.assertNotIn("/api/auth/setup", manual_server.POST_ROUTES)
+
     def test_disconnected_browser_does_not_retry_response(self):
         for failure in (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
             handler = manual_server.Handler.__new__(manual_server.Handler)

@@ -2,7 +2,7 @@
 import json
 import uuid
 
-from core.contracts import ACCOUNT_AVATAR_ALL_IDS, ACCOUNT_AVATAR_PREF
+from core.contracts import ACCOUNT_AVATAR_ALL_IDS, ACCOUNT_AVATAR_PREF, ADMIN_ROLES
 from core.feedback_contracts import FEEDBACK_FIELDS, FEEDBACK_TABLE
 from services.feedback_validation import normalize_feedback
 
@@ -121,9 +121,9 @@ def dismiss(conn, submission_id, action, actor_id, role, now):
         if not rows:
             raise ValueError("反馈已处理或不存在")
         owner = all(row["author_user_id"] == actor_id for row in rows)
-        if action == "withdraw" and not owner and role not in ("operator", "admin"):
+        if action == "withdraw" and not owner and role not in ("operator", *ADMIN_ROLES):
             raise PermissionError("无权撤下此反馈")
-        if action == "reject" and role not in ("operator", "admin"):
+        if action == "reject" and role not in ("operator", *ADMIN_ROLES):
             raise PermissionError("仅航管或管理员可驳回")
         status = "withdrawn" if action == "withdraw" else "rejected"
         conn.execute("UPDATE item_feedback SET status=?,resolved_at=?,resolved_by=? WHERE submission_id=? AND status='active'",

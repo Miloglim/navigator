@@ -40,3 +40,28 @@ Thumbs.db
 
 # 审查任务的原始 runlogs 转储（报告 .md 入库留痕，原始 JSON 不入库）
 **/ops/reports/runlogs-*.json
+
+# ---- Navigator/自动化运行产物（包含浏览器检查点、状态、日志和临时令牌）----
+运价项目/attachments/
+运价项目/Database/ops/reports/
+运价项目/ops/**/archive/
+运价项目/ops/**/artifacts/
+运价项目/ops/**/checkpoint/
+运价项目/ops/**/logs/
+运价项目/ops/**/reports/
+运价项目/ops/**/runtime/
+运价项目/ops/**/state/
+运价项目/ops/**/*.before
+运价项目/ops/**/*.old
+运价项目/ops/**/*.lock
+运价项目/ops/*-backup-*/
+运价项目/ops/*-removed-*/
+运价项目/ops/recovery-*/
+运价项目/ops/codex-heartbeat/
+运价项目/ops/task-scheduler/
+运价项目/**/_audit_*.py
+运价项目/**/_tmp_*
+运价项目/**/*.out
+运价项目/**/*.lock
+运价项目/tmp_master.json
+运价项目/$null

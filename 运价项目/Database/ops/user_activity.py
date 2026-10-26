@@ -97,8 +97,8 @@ def record_sales_search(connection, query, endpoint, result):
 def _recent_rows(connection, since, hide_admin=False):
     json_object = _json_object_function(connection)
     json_cast = _json_object_cast(connection)
-    admin_clause = (" AND e.role<>'admin' AND e.user_id NOT IN "
-                    "(SELECT user_id FROM operators WHERE role='admin')") if hide_admin else ""
+    admin_clause = (" AND e.role NOT IN ('superadmin','admin') AND e.user_id NOT IN "
+                    "(SELECT user_id FROM operators WHERE role IN ('superadmin','admin'))") if hide_admin else ""
     rows = [dict(row) for row in connection.execute(
         "SELECT e.event_id,e.user_id,e.role,e.event_type,e.event_date,e.properties_json,"
         "e.result_count,e.client_ip,e.created_at,COALESCE(o.display_name,o.name,e.user_id) AS display_name "
@@ -185,8 +185,8 @@ def events(connection, query):
         clauses.append("e.user_id=?")
         args.append(options["user_id"])
     if options["hide_admin"]:
-        clauses.append("e.role<>'admin'")
-        clauses.append("e.user_id NOT IN (SELECT user_id FROM operators WHERE role='admin')")
+        clauses.append("e.role NOT IN ('superadmin','admin')")
+        clauses.append("e.user_id NOT IN (SELECT user_id FROM operators WHERE role IN ('superadmin','admin'))")
     where = " WHERE " + " AND ".join(clauses)
     total = connection.execute(
         "SELECT COUNT(*) FROM user_activity_events e" + where, args).fetchone()[0]
@@ -235,8 +235,8 @@ def timeline(connection, query):
         clauses.append("user_id=?")
         args.append(options["user_id"])
     if options["hide_admin"]:
-        clauses.append("COALESCE(role,'')<>'admin'")
-        clauses.append("actor_id NOT IN (SELECT user_id FROM operators WHERE role='admin')")
+        clauses.append("COALESCE(role,'') NOT IN ('superadmin','admin')")
+        clauses.append("actor_id NOT IN (SELECT user_id FROM operators WHERE role IN ('superadmin','admin'))")
     if options["category"]:
         clauses.append("category=?")
         args.append(options["category"])

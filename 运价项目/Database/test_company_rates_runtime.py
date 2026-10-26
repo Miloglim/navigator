@@ -94,6 +94,29 @@ class CompanyRateRuntimeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.runtime._port(99,'Shanghai',profile)
 
+    def test_company_short_name_resolves_when_code_and_master_alias_agree(self):
+        from services.company_rates import local_mapping_profile
+        profile=local_mapping_profile('Sokhna Port','port',[{
+            'name':'Sokhna Port','name_en':'Sokhna Port','name_cn':'苏赫纳','country':'EG',
+            'locode_ref':'EGSOK','aliases':'苏赫纳,Sokhna,EGSOK'}])
+        company={'id':29817,'code':'EGSOK','enName':'SOKHNA','cnName':'索科纳',
+                 'countryCode':'EGYPT','type':11}
+        self.runtime._post=lambda _req:[company]
+
+        result=self.runtime._port(99,'Sokhna Port',profile)
+
+        self.assertEqual(result['id'],29817)
+        connection=self.connect()
+        try:
+            saved=connection.execute(
+                'SELECT local_name,company_code,company_name FROM company_mappings WHERE kind=? AND local_name=?',
+                ('port','Sokhna Port'),
+            ).fetchone()
+        finally:
+            connection.close()
+        self.assertEqual((saved['local_name'],saved['company_code'],saved['company_name']),
+                         ('Sokhna Port','EGSOK','SOKHNA'))
+
     def test_grouped_products_are_retrieved_with_their_own_prices(self):
         current = {'id':'new', 'product_id':2, 'product_price':[{'show_price':5150}],
                    'schedule_list':[{'product_id':1},{'product_id':2}],
@@ -238,6 +261,14 @@ class CompanyRateRuntimeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "船司列表格式"):
             self.runtime.create("usr-1", "company", {
                 "pol": ["CNSHA"], "pod": ["USLAX"], "carriers": "COSCO",
+            })
+        with self.assertRaisesRegex(ValueError, "分别最多选择 3 个"):
+            self.runtime.create("usr-1", "company", {
+                "pol": ["CNSHA", "CNNGB", "CNSZX", "CNTAO"], "pod": ["USLAX"], "carriers": [],
+            })
+        with self.assertRaisesRegex(ValueError, "分别最多选择 3 个"):
+            self.runtime.create("usr-1", "company", {
+                "pol": ["CNSHA"], "pod": ["USLAX", "USLGB", "USOAK", "USSEA"], "carriers": [],
             })
 
     def test_saved_credentials_override_environment_without_restarting_runtime(self):

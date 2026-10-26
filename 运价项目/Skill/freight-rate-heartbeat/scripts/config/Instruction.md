@@ -4,8 +4,8 @@
 
 ## `ledger_contract.json` —— 枚举 + 台账连接 + 运行态目录（契约单一事实源）
 
-- `ctype`：柜型三档 `20GP / 40HQ/HC / 40NOR`。台账服务端不校验这个，靠 skill 自守。
-- `space_type_options`：舱位类型**十一档**（现舱/加班船/放舱开放/售罄/舱位紧张/截关截单/撤载改期/箱子动态 + 2026-09-11 新增 空班/跳港/首航），与台账 `agent-input-contract.md`、`manualdb.SPACE_TYPE_ENUM` 三处对齐。
+- `ctype`：柜型四档 `20GP / 40HQ/HC / 40NOR / 45HQ/HC`。45HQ/45HC 独立存储，不映射为40HQ/HC；台账服务端和 skill 均校验。
+- `space_type_options`：舱位类型**十一档**（现舱/加班船/放舱开放/售罄/舱位紧张/截关截单/撤载改期/箱子动态 + 2026-09-11 新增 空班/跳港/首航）；字段可为空，填写时与台账 `manualdb.SPACE_TYPE_ENUM` 对齐。
 - `db_conn`：连台账 `manual_server` 的参数——
   - `server_url`（默认 `http://127.0.0.1:8795`，可用环境变量 `FRT_DB_URL` 覆盖）
   - `token_file`（写令牌路径，可用 `FRT_DB_TOKEN` 直接给值覆盖）

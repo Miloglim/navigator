@@ -22,6 +22,10 @@ from ops.postgres_migrate import migrate
 from ops.postgres_sync import load_dsn
 
 POSTGRES_TEST_ENV = "FREIGHT_POSTGRES_INTEGRATION_TEST"
+MASTER_FIXTURE_TABLES = (
+    "chat_groups", "ports", "carriers", "routes", "senders", "port_groups",
+    "alias_scope", "field_defaults", "port_routes",
+)
 
 
 @unittest.skipUnless(os.environ.get(POSTGRES_TEST_ENV) == "1", "requires an explicit local PG test opt-in")
@@ -38,9 +42,29 @@ class PostgresRuntimeTests(unittest.TestCase):
                              include_business_data=False, replace_target=False)
             if not result["ok"]:
                 raise AssertionError("configuration migration into test schema failed")
+            # Runtime truth moved to PostgreSQL; the archived SQLite file has no master rows.
+            # Copy read-only master fixtures into the disposable schema so tests do not depend on
+            # whether the old SQLite snapshot predates the migration.
+            with psycopg.connect(cls.base_dsn) as source, psycopg.connect(cls.test_dsn) as target:
+                for table in MASTER_FIXTURE_TABLES:
+                    source_cursor = source.execute(
+                        sql.SQL("SELECT * FROM {}").format(sql.Identifier(table)))
+                    columns = [item.name for item in source_cursor.description]
+                    rows = source_cursor.fetchall()
+                    if not rows:
+                        continue
+                    target.cursor().executemany(
+                        sql.SQL("INSERT INTO {} ({}) VALUES ({})").format(
+                            sql.Identifier(table),
+                            sql.SQL(", ").join(sql.Identifier(column) for column in columns),
+                            sql.SQL(", ").join(sql.Placeholder() for _ in columns),
+                        ),
+                        rows,
+                    )
             fixtures = postgresdb.Connection(cls.test_dsn)
             try:
                 cls.route_fixtures = [dict(row) for row in fixtures.execute('SELECT * FROM routes')]
+                cls.chat_group_fixtures = [dict(row) for row in fixtures.execute('SELECT * FROM chat_groups')]
             finally:
                 fixtures.close()
         except Exception:
@@ -64,6 +88,8 @@ class PostgresRuntimeTests(unittest.TestCase):
             # Profile tests replace routes; restore baseline configuration so quote
             # and legacy snapshot tests do not inherit a prior test's master edits.
             manualdb.sync_rows(connection, 'routes', self.route_fixtures, commit=False)
+            connection.execute('DELETE FROM chat_groups')
+            manualdb.sync_rows(connection, 'chat_groups', self.chat_group_fixtures, commit=False)
             connection.commit()
             manualdb.invalidate_master()
         finally:
@@ -593,6 +619,7 @@ class PostgresRuntimeTests(unittest.TestCase):
             released = manualdb.query(connection, master, "rates", {})
             self.assertEqual(released["total"], 3)
             self.assertEqual({r["entry_id"] for r in released["rows"]}, pending_entry_ids)
+            self.assertEqual({r["currency"] for r in released["rows"]}, {"USD"})
             self.assertEqual(manualdb.approve_all_pending(connection, master)["approved"], 0)
             statuses = {r["id"]: (r["review_status"], r["check_status"]) for r in
                         connection.execute("SELECT id, review_status, check_status FROM pending_records")}
@@ -617,11 +644,35 @@ class PostgresRuntimeTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_stale_noninteger_field_skips_group_postgres(self):
+        from test_bulk_whole_groups import verify_stale_noninteger_field_skips_group
+        connection = postgresdb.Connection(self.test_dsn)
+        try:
+            verify_stale_noninteger_field_skips_group(self, connection)
+        finally:
+            connection.close()
+
     def test_bulk_ownership_gate_postgres(self):
         from test_bulk_whole_groups import verify_ownership_gate
         connection = postgresdb.Connection(self.test_dsn)
         try:
             verify_ownership_gate(self, connection)
+        finally:
+            connection.close()
+
+    def test_partial_group_passed_only_release_postgres(self):
+        from test_bulk_whole_groups import verify_partial_group_is_not_bulk_approved
+        connection = postgresdb.Connection(self.test_dsn)
+        try:
+            verify_partial_group_is_not_bulk_approved(self, connection)
+        finally:
+            connection.close()
+
+    def test_passed_partial_group_release_postgres(self):
+        from test_bulk_whole_groups import verify_passed_partial_groups_are_released
+        connection = postgresdb.Connection(self.test_dsn)
+        try:
+            verify_passed_partial_groups_are_released(self, connection)
         finally:
             connection.close()
 
@@ -661,7 +712,7 @@ class PostgresRuntimeTests(unittest.TestCase):
                 self.assertTrue(call("/api/bootstrap")[0]["ok"])
                 self.assertEqual(call("/api/stats")[0]["ratesTotal"], 0)
                 record = {"起运港": "天津", "目的港": "Santos", "船司": "达飞", "航线": "南美东岸",
-                          "柜型": "20GP", "海运费USD": "200", "有效期起": "2026-09-28",
+                          "柜型": "20GP", "海运费USD": "200", "有效期起": "2026-09-28", "来源群": "土耳其价格更新",
                           "有效期止": "2026-10-28", "消息ID": "msg//http-id-group==", "消息原文": "PostgreSQL HTTP integration test"}
                 self.assertEqual(call("/api/validate", {"kind": "rates", "records": [record]})[0]["good"], 1)
                 staged, _ = call("/api/pending", {"kind": "rates", "origin": "agent", "records": [record]},

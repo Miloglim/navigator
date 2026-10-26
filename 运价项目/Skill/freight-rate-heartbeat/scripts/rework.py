@@ -18,8 +18,14 @@ import sys
 from datetime import datetime, timedelta
 
 import ledger_client as db
+import paths as P          # 只为拿 CHAT_SOURCES_F 路径，读全量群的 shard 归属（返修池按分片切分）
 
 sys.stdout.reconfigure(encoding="utf-8")
+
+# 群名（写入记录的 来源群）→ 所属分片，供返修池按 --shard 切分。
+# 直接读配置文件全量，绕开 P.chat_groups()（它会按当前 FRT_SHARD 过滤，那样另一片的群就看不全）。
+_NAME2SHARD = {g["name"]: str(g.get("shard", "")).strip().upper()
+               for g in json.load(open(P.CHAT_SOURCES_F, encoding="utf-8"))["groups"]}
 
 CORE = ("起运港", "目的港", "船司", "航线", "柜型", "海运费USD", "价格USD",
         "有效期船期", "船名航次", "箱量", "舱位类型", "备注")
@@ -59,7 +65,7 @@ def rounds_of(row):
     return n
 
 
-def cmd_list(days, limit):
+def cmd_list(days, limit, shard=None):
     res = db._request("GET", "/api/pending?status=rejected&limit=500", None)
     if not isinstance(res, dict) or not res.get("ok"):
         print("ABORT: 拉返修池失败：%s" % (res or {}))
@@ -73,6 +79,18 @@ def cmd_list(days, limit):
                 continue
         except ValueError:
             pass
+        # 空原因是人工确认的垃圾条目，只沉淀 noise 学习信号，不进入返修池。
+        if not str(r.get("note") or "").strip():
+            continue
+        if shard:   # 按分片切池：只捞归属本片群的驳回，两片各修各的、不撞同一条
+            p = r.get("payload") or {}
+            if isinstance(p, str):
+                try:
+                    p = json.loads(p)
+                except ValueError:
+                    p = {}
+            if _NAME2SHARD.get(str(p.get("来源群") or "").strip()) != shard:
+                continue
         keep.append(r)
     keep = keep[:limit]
     if not keep:
@@ -130,6 +148,7 @@ if __name__ == "__main__":
     a1 = sub.add_parser("list")
     a1.add_argument("--days", type=int, default=7)
     a1.add_argument("--limit", type=int, default=20)
+    a1.add_argument("--shard", default=None, help="只捞该分片（A/B/C/D）归属群的驳回；不给则全量")
     a2 = sub.add_parser("submit")
     a2.add_argument("--id", type=int, required=True)
     a2.add_argument("--fields", required=True, help='JSON 对象，如 {"目的港":"Istanbul"}')
@@ -137,7 +156,7 @@ if __name__ == "__main__":
     a2.add_argument("--actor", default="采集agent")
     a = ap.parse_args()
     if a.cmd == "list":
-        sys.exit(cmd_list(a.days, a.limit))
+        sys.exit(cmd_list(a.days, a.limit, (a.shard or "").strip().upper() or None))
     try:
         f = json.loads(a.fields)
     except ValueError:

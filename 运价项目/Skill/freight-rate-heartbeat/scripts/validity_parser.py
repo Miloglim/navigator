@@ -12,6 +12,7 @@ parse(text, msg_date) -> dict(valid_from, valid_to, etd)
           -> valid_from + valid_to，etd 留空
   开船型  9/7开 / 9.12 ETD / 8.31托9.8 / 9/6晚开9/9 / 9.5托班到9.11
           -> 只填 etd，有效期留空
+  “晚开”一律取箭头后的实际开船日：9.6晚开到9.9 -> ETD=9.9。
   不可解析 case by case / 锁8月底运价+500 / 空 -> 三者皆 None
 
 GRI 生效日、附加费日期（如 "9.08 GRI"、"9.5起收LWS"）不算有效期，交给备注。
@@ -34,21 +35,28 @@ _RANGE = re.compile(
     r'(?:(\d{4})[-/])?(\d{1,2})[./\-]?(\d{1,2})?')
 # 英文区间：1 Sep - 7 Sep / 01st Sep 2026
 _RANGE_EN = re.compile(
-    r'(\d{1,2})\s*(?:st|nd|rd|th)?\s*([A-Za-z]{3})[a-z]*\s*(?:[-–—~]|至|到)\s*'
-    r'(\d{1,2})\s*(?:st|nd|rd|th)?\s*([A-Za-z]{3})', re.I)
+    r'\b(\d{1,2})\s*(?:st|nd|rd|th)?[\s-]*([A-Za-z]{3})[a-z]*'
+    r'(?:[\s-]+(\d{4}))?\s*(?:[-–—~]|\bto\b|至|到)\s*'
+    r'(\d{1,2})\s*(?:st|nd|rd|th)?[\s-]*([A-Za-z]{3})[a-z]*'
+    r'(?:[\s-]+(\d{4}))?\b', re.I)
 # 拖班：8.31托9.8 / 9.5托9.7 / 9.10拖9.13 / 9.5托班到9.11（"托""拖"混用，都算）
 _TUO = re.compile(r'(\d{1,2})[./](\d{1,2})\s*[托拖](?:班)?(?:到|至)?\s*(\d{1,2})[./](\d{1,2})')
-# 晚开：9/6晚开9/9  -> ETD 取前一个
-_LATE = re.compile(r'(\d{1,2})[/./](\d{1,2})\s*晚\s*开\s*(\d{1,2})[/./](\d{1,2})')
+# 晚开：9/6晚开到9/9 = 原计划9/6、延误后实际9/9开，ETD取后一个。
+_LATE = re.compile(r'(\d{1,2})[./-](\d{1,2})\s*晚\s*开\s*(?:到|至)?\s*(\d{1,2})[./-](\d{1,2})')
 # 单开船：9/7开 / 9.4开 / 9月7日开
 _SAIL = re.compile(r'(\d{1,2})[/./](\d{1,2})\s*(?:晚)?开')
 # ETD 显式：ETD: 4 SEP / 9.12 ETD / ETD 9/12 / ETD：9.8（全角冒号）
 _ETD_A = re.compile(r'ETD[:：\s]*?(\d{1,2})[/.\s](\d{1,2})', re.I)
 _ETD_B = re.compile(r'(\d{1,2})[/.\s](\d{1,2})\s*ETD', re.I)
+_ETD_ISO = re.compile(r'\bETD[:：\s]*(\d{4})-(\d{2})-(\d{2})(?!\d)', re.I)
 # 同月区间：9.1-14（= 9/1 至 9/14），右侧不带月份
 _RANGE_SAMEM = re.compile(r'(?:(\d{4})[-/])?(\d{1,2})[./](\d{1,2})\s*(?:[-~–—]|至|到)\s*(\d{1,2})(?![\d./\-])')
 # 裸英文月日：4 SEP
 _MD_EN = re.compile(r'\b(\d{1,2})[/.\s]+([A-Za-z]{3})[a-z]*\b', re.I)
+_WEEK = re.compile(
+    r'(?:(\d{4})\s*年?\s*)?(?:第\s*)?(\d{1,2})\s*周'
+    r'|(?:(\d{4})\s*)?WK\s*(\d{1,2})'
+    r'|(?:(\d{4})\s*)?WEEK\s*(\d{1,2})', re.I)
 
 
 def _ymd(y, m, d, msg):
@@ -71,7 +79,7 @@ def msg_year_default(m):
     return None
 
 
-def parse(text, msg_date=None):
+def parse(text, msg_date=None, *, week_as_validity=False):
     out = {"valid_from": None, "valid_to": None, "etd": None}
     if not text or not str(text).strip():
         return out
@@ -82,15 +90,33 @@ def parse(text, msg_date=None):
     for rx in _STRIP:
         s = rx.sub(' ', s)
 
+    # 结构化修正文件使用ISO船期；与独立有效期区间并存，不把过去船期推成未来。
+    iso_etd = _ETD_ISO.search(s)
+    if iso_etd:
+        out['etd'] = _ymd(*(int(x) for x in iso_etd.groups()), msg_date)
+
+    weeks = list(_WEEK.finditer(s)) if week_as_validity else []
+    if len(weeks) == 1 and not re.search(r'\b\d{1,2}\s*/\s*\d{1,2}\s*周', s):
+        week = weeks[0]
+        year = int(week.group(1) or week.group(3) or week.group(5) or (msg_date.year if msg_date else date.today().year))
+        number = int(week.group(2) or week.group(4) or week.group(6))
+        try:
+            start = date.fromisocalendar(year, number, 1)
+            out['valid_from'] = start.isoformat()
+            out['valid_to'] = (start + timedelta(days=6)).isoformat()
+            return out
+        except ValueError:
+            return out
+
     # 1) 英文区间优先（VALID: 1 Sep - 7 Sep）
     m = _RANGE_EN.search(s)
     if m:
-        a, b = MON.get(m.group(2).lower()), MON.get(m.group(4).lower())
+        a, b = MON.get(m.group(2).lower()), MON.get(m.group(5).lower())
         if a and b:
-            ya = _year_for(a, msg_date) or (msg_date.year if msg_date else 2026)
-            yb = ya if b >= a else ya + 1
+            ya = int(m.group(3)) if m.group(3) else (_year_for(a, msg_date) or (msg_date.year if msg_date else 2026))
+            yb = int(m.group(6)) if m.group(6) else (ya if b >= a else ya + 1)
             out["valid_from"], out["valid_to"] = _ymd(ya, a, int(m.group(1)), msg_date), \
-                                                 _ymd(yb, b, int(m.group(3)), msg_date)
+                                                 _ymd(yb, b, int(m.group(4)), msg_date)
             return out
 
     # 2) 数字区间
@@ -116,6 +142,9 @@ def parse(text, msg_date=None):
             if out["valid_from"] and out["valid_to"]:
                 return out
 
+    if out['etd']:
+        return out
+
     # 3) 拖班 -> ETD 取拖到的那天
     m = _TUO.search(s)
     if m:
@@ -123,11 +152,11 @@ def parse(text, msg_date=None):
         out["etd"] = _ymd(_year_for(em, msg_date) or 2026, em, ed, msg_date)
         return out
 
-    # 4) 晚开 -> ETD 取前面开船日
+    # 4) 晚开 -> ETD 取延误后的实际开船日
     m = _LATE.search(s)
     if m:
-        sm, sd = int(m.group(1)), int(m.group(2))
-        out["etd"] = _ymd(_year_for(sm, msg_date) or 2026, sm, sd, msg_date)
+        em, ed = int(m.group(3)), int(m.group(4))
+        out["etd"] = _ymd(_year_for(em, msg_date) or 2026, em, ed, msg_date)
         return out
 
     # 5) 显式 ETD
@@ -155,7 +184,7 @@ def parse(text, msg_date=None):
     return out
 
 
-def derive(text, msg_date=None):
+def derive(text, msg_date=None, *, week_as_validity=False):
     """有效期兜底窗（2026-09-10 规则 17）。返回 (valid_from, valid_to, etd, ai_default)。
 
     运价必填有效期，报价常只给船期不给区间，按三级补：
@@ -164,7 +193,7 @@ def derive(text, msg_date=None):
       3) 既无区间又无 ETD      -> [消息日期, 消息日期+2天]，ai_default=True（看板打"AI判断"标签）
     "当前时间"取 msg_date（消息日期），保证可重放/确定性；缺省用今天。
     """
-    r = parse(text, msg_date)
+    r = parse(text, msg_date, week_as_validity=week_as_validity)
     if isinstance(msg_date, str):
         anchor = date.fromisoformat(msg_date[:10])
     elif isinstance(msg_date, date):

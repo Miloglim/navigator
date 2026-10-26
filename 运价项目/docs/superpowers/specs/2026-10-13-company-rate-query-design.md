@@ -18,7 +18,7 @@
 
 多港查询按已确认的具体港口 ID 形成起运港 × 目的港组合，最多 20 组，受控并发。城市必须先展开为具体港口；不得把城市聚合 ID 直接用于船司实时价格。每组组合独立成功或失败。
 
-公司网关只从后端环境读取 `YQN_DINGTALK_TOKEN` 和 `YQN_USER_ID`。令牌只放外层 `Authorization`，业务用户 ID 放转发体 `body.header.xUserId`。两者均不得返回前端、写入普通日志或进入台账记录。
+公司网关优先读取服务器本机管理员维护的 Windows DPAPI 加密凭据，环境变量 `YQN_DINGTALK_TOKEN` 和 `YQN_USER_ID` 仅作兼容兜底。令牌只放外层 `Authorization`，业务用户 ID 放转发体 `body.header.xUserId`。Token 不得返回前端、写入普通日志或进入台账记录；管理接口只返回是否配置、业务用户 ID 和更新时间，并拒绝非管理员及非本机访问。
 
 ## 保存与复用
 
@@ -31,9 +31,9 @@
 新增接口统一返回 `{ok, data?, error?, code?}`：
 
 - `POST /api/company-rates/query`：接收本地规范化查询条件和港口组合，创建公司内询任务，立即返回本地结果引用与任务 ID。
-- `GET /api/company-rates/tasks/{id}`：读取任务状态、分组合结果和错误，不触碰本地运价查询。
+- `GET /api/company-rates/tasks?id={id}`：读取任务状态、分组合结果和错误，不触碰本地运价查询。
 - `POST /api/company-rates/realtime`：创建船公司实时价格任务；只接受用户显式提交的船司、柜型、日期和重量。
-- `GET /api/company-rates/realtime/{id}`：读取实时任务状态和按船司结果。
+- 实时任务沿用 `GET /api/company-rates/tasks?id={id}` 读取状态和按船司结果。
 
 公司网关目标接口仅由服务层调用，不直接暴露给浏览器。船公司实时查询必须使用本次创建返回的 `taskId`，首轮空结果表示未完成，不表示无报价；轮询预算耗尽时记录为未完成。
 

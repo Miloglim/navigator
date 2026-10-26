@@ -3,7 +3,7 @@ import hmac
 import secrets
 import time
 from urllib.parse import urlencode
-from core.contracts import ok
+from core.contracts import ACCOUNT_ROLES, ok
 from core.prospector_contracts import CLIENT_ID, RANDOM_BYTES, ACCESS_TTL_SECONDS, CODE_TTL_SECONDS, REFRESH_TTL_SECONDS, PURGE_BATCH_SIZE
 from services.prospector_auth import authorization_params, challenge, digest, public_user
 
@@ -15,7 +15,7 @@ def _account(connection, user_id, fingerprint=None):
     if not row: raise InvalidToken('login required')
     row = dict(row)
     security = digest(str(row.pop('password_hash', '') or '') + ':' + str(row.pop('security_revision')))
-    if not row['active'] or row['must_change_password'] or row['role'] not in ('admin','operator','sales') or (fingerprint and not hmac.compare_digest(security, fingerprint)):
+    if not row['active'] or row['must_change_password'] or row['role'] not in ACCOUNT_ROLES or (fingerprint and not hmac.compare_digest(security, fingerprint)):
         raise InvalidToken('account authorization unavailable')
     row['security_hash'] = security
     return row

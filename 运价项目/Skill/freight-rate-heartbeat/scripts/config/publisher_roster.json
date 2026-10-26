@@ -1,0 +1,1264 @@
+{
+  "version": "1.3.0",
+  "members": [
+    {
+      "group_cid": "cidU3K4GSO+bHPhFklCHMnZQw==",
+      "group": "地西+地黑价格更新",
+      "name": "赵丹丹",
+      "sender_id": "D1g37jHgvtoxQBtpVgR9qKBA3uxAdDawr",
+      "sender_open_id": "D1g37jHgvtoxQBtpVgR9qKBA3uxAdDawr",
+      "confirmed_on": "2026-09-28",
+      "source": "user",
+      "note": "用户明确确认该群还有赵丹丹；保留群内其他已识别航管"
+    },
+    {
+      "group_cid": "cidTKlF4IcDiQonoNQY3qkHow==",
+      "group": "欧洲价格更新",
+      "name": "赵丹丹",
+      "sender_id": "D1g37jHgvtoxQBtpVgR9qKBA3uxAdDawr",
+      "sender_open_id": "D1g37jHgvtoxQBtpVgR9qKBA3uxAdDawr",
+      "confirmed_on": "2026-09-28",
+      "source": "user",
+      "note": "用户明确确认该群还有赵丹丹；保留群内其他已识别航管"
+    },
+    {
+      "group_cid": "cidFt6iQAGJrcefNu394z//Gw==",
+      "group": "天津拉美询价群",
+      "name": "Grace Gu-13820801000",
+      "sender_id": "DfVUet0ZClt8q5e5dO7ErzBA3uxAdDawr",
+      "sender_open_id": "DfVUet0ZClt8q5e5dO7ErzBA3uxAdDawr",
+      "source": "user",
+      "decision": "publisher",
+      "confirmed_on": "2026-09-29T11:47:30+08:00",
+      "note": "确认"
+    },
+    {
+      "group_cid": "cidzQjqwS4YSXyWr7fceE2KVA==",
+      "group": "CMA/EMC/PIL交流群",
+      "name": "Mandy李龙艳",
+      "sender_id": "DUsmIOWhHkcdQBtpVgR9qKBA3uxAdDawr",
+      "sender_open_id": "DUsmIOWhHkcdQBtpVgR9qKBA3uxAdDawr",
+      "source": "user",
+      "decision": "publisher",
+      "confirmed_on": "2026-09-29T16:03:45+08:00",
+      "note": "1"
+    },
+    {
+      "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+      "group": "宁波舱位滚动更新群",
+      "name": "孙丽洁 Emma -0574-87236750",
+      "sender_id": "D0JqMU6rCTmYWAS1TVGDoElI6lYgOmiiVx",
+      "sender_open_id": "D0JqMU6rCTmYWAS1TVGDoElI6lYgOmiiVx",
+      "source": "user",
+      "decision": "publisher",
+      "confirmed_on": "2026-10-10T15:48:20+08:00",
+      "note": "航管"
+    },
+    {
+      "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+      "group": "宁波舱位滚动更新群",
+      "name": "虞方磊Ted 17815941077",
+      "sender_id": "D0JqMU6rCTmZr9p5Utp0m3wVZohwZkFKk",
+      "sender_open_id": "D0JqMU6rCTmZr9p5Utp0m3wVZohwZkFKk",
+      "source": "user",
+      "decision": "publisher",
+      "confirmed_on": "2026-10-16T14:22:47+08:00",
+      "note": "管理员直接确认"
+    },
+    {
+      "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+      "group": "宁波舱位滚动更新群",
+      "name": "苏楠Susu-18668579785",
+      "sender_id": "DmlKBtOJVTiiEgHyD8ryQryRA3uxAdDawr",
+      "sender_open_id": "DmlKBtOJVTiiEgHyD8ryQryRA3uxAdDawr",
+      "source": "user",
+      "decision": "publisher",
+      "confirmed_on": "2026-10-16T14:22:52+08:00",
+      "note": "管理员直接确认"
+    },
+    {
+      "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+      "group": "宁波舱位滚动更新群",
+      "name": "罗瑶 Lorraine-13666437390",
+      "sender_id": "DUS8wveGWiSI8q5e5dO7ErzBA3uxAdDawr",
+      "sender_open_id": "DUS8wveGWiSI8q5e5dO7ErzBA3uxAdDawr",
+      "source": "user",
+      "decision": "publisher",
+      "confirmed_on": "2026-10-16T14:22:59+08:00",
+      "note": "管理员直接确认"
+    },
+    {
+      "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+      "group": "宁波舱位滚动更新群",
+      "name": "徐斐Sophie-18957416149",
+      "sender_id": "DTWZAK7ClMphQBtpVgR9qKBA3uxAdDawr",
+      "sender_open_id": "DTWZAK7ClMphQBtpVgR9qKBA3uxAdDawr",
+      "source": "user",
+      "decision": "publisher",
+      "confirmed_on": "2026-10-16T14:23:09+08:00",
+      "note": "管理员直接确认"
+    },
+    {
+      "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+      "group": "宁波舱位滚动更新群",
+      "name": "俞文清 15268415150",
+      "sender_id": "D0JqMU6rCTmZPJcAfRjSkbd3slnjp5anh",
+      "sender_open_id": "D0JqMU6rCTmZPJcAfRjSkbd3slnjp5anh",
+      "source": "user",
+      "decision": "publisher",
+      "confirmed_on": "2026-10-16T14:23:16+08:00",
+      "note": "管理员直接确认"
+    },
+    {
+      "group_cid": "ciddW/ROT0bCoK40o/mJ14Lvg==",
+      "group": "北埃及价格更新",
+      "name": "杜佳仪 Alby",
+      "sender_id": "DzB2L9aY7sgM7uzxRIMq9T5WDZmWhGfhH",
+      "sender_open_id": "DzB2L9aY7sgM7uzxRIMq9T5WDZmWhGfhH",
+      "source": "user",
+      "decision": "publisher",
+      "confirmed_on": "2026-10-16T14:23:39+08:00",
+      "note": "管理员直接确认"
+    },
+    {
+      "group_cid": "cidjovIVW4/c/IPqL1m+RFLgg==",
+      "group": "厦门运价总群",
+      "name": "傅秋泓",
+      "sender_id": "DXQQ5WzliPmMXiiV3KaSMz9PhA3uxAdDawr",
+      "sender_open_id": "DXQQ5WzliPmMXiiV3KaSMz9PhA3uxAdDawr",
+      "source": "user",
+      "decision": "publisher",
+      "confirmed_on": "2026-10-16T14:23:44+08:00",
+      "note": "管理员直接确认"
+    },
+    {
+      "group_cid": "cidjovIVW4/c/IPqL1m+RFLgg==",
+      "group": "厦门运价总群",
+      "name": "郭虹",
+      "sender_id": "D0JqMU6rCTmYePTfHJNIGEgfEtVp1RXX5",
+      "sender_open_id": "D0JqMU6rCTmYePTfHJNIGEgfEtVp1RXX5",
+      "source": "user",
+      "decision": "publisher",
+      "confirmed_on": "2026-10-16T14:23:47+08:00",
+      "note": "管理员直接确认"
+    }
+  ],
+  "revision": 34,
+  "updated_at": "2026-10-16T14:23:47+08:00",
+  "audit": [
+    {
+      "at": "2026-09-28T17:55:58+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidzQjqwS4YSXyWr7fceE2KVA==",
+      "group": "CMA/EMC/PIL交流群",
+      "identity_key": "open:DUsmIOWhHkcdQBtpVgR9qKBA3uxAdDawr",
+      "name": "Mandy李龙艳",
+      "action": "confirm",
+      "note": "1",
+      "before": [],
+      "after": {
+        "group_cid": "cidzQjqwS4YSXyWr7fceE2KVA==",
+        "group": "CMA/EMC/PIL交流群",
+        "name": "Mandy李龙艳",
+        "sender_id": "DUsmIOWhHkcdQBtpVgR9qKBA3uxAdDawr",
+        "sender_open_id": "DUsmIOWhHkcdQBtpVgR9qKBA3uxAdDawr",
+        "source": "user",
+        "decision": "publisher",
+        "confirmed_on": "2026-09-28T17:55:58+08:00",
+        "note": "1"
+      },
+      "revision": 1
+    },
+    {
+      "at": "2026-09-29T11:47:30+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidFt6iQAGJrcefNu394z//Gw==",
+      "group": "天津拉美询价群",
+      "identity_key": "open:DfVUet0ZClt8q5e5dO7ErzBA3uxAdDawr",
+      "name": "Grace Gu-13820801000",
+      "action": "confirm",
+      "note": "确认",
+      "before": [],
+      "after": {
+        "group_cid": "cidFt6iQAGJrcefNu394z//Gw==",
+        "group": "天津拉美询价群",
+        "name": "Grace Gu-13820801000",
+        "sender_id": "DfVUet0ZClt8q5e5dO7ErzBA3uxAdDawr",
+        "sender_open_id": "DfVUet0ZClt8q5e5dO7ErzBA3uxAdDawr",
+        "source": "user",
+        "decision": "publisher",
+        "confirmed_on": "2026-09-29T11:47:30+08:00",
+        "note": "确认"
+      },
+      "revision": 2
+    },
+    {
+      "at": "2026-09-29T11:48:17+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+      "group": "宁波舱位滚动更新群",
+      "identity_key": "open:DdR66eiixnvZeK3iStf0wXz3RA3uxAdDawr",
+      "name": "曹金平",
+      "action": "exclude",
+      "note": "销售",
+      "before": [],
+      "after": {
+        "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+        "group": "宁波舱位滚动更新群",
+        "name": "曹金平",
+        "sender_id": "DdR66eiixnvZeK3iStf0wXz3RA3uxAdDawr",
+        "sender_open_id": "DdR66eiixnvZeK3iStf0wXz3RA3uxAdDawr",
+        "source": "user",
+        "decision": "excluded",
+        "confirmed_on": "2026-09-29T11:48:17+08:00",
+        "note": "销售"
+      },
+      "revision": 3
+    },
+    {
+      "at": "2026-09-29T16:03:45+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidzQjqwS4YSXyWr7fceE2KVA==",
+      "group": "CMA/EMC/PIL交流群",
+      "identity_key": "open:DUsmIOWhHkcdQBtpVgR9qKBA3uxAdDawr",
+      "name": "Mandy李龙艳",
+      "action": "confirm",
+      "note": "1",
+      "before": [
+        {
+          "group_cid": "cidzQjqwS4YSXyWr7fceE2KVA==",
+          "group": "CMA/EMC/PIL交流群",
+          "name": "Mandy李龙艳",
+          "sender_id": "DUsmIOWhHkcdQBtpVgR9qKBA3uxAdDawr",
+          "sender_open_id": "DUsmIOWhHkcdQBtpVgR9qKBA3uxAdDawr",
+          "source": "user",
+          "decision": "publisher",
+          "confirmed_on": "2026-09-28T17:55:58+08:00",
+          "note": "1"
+        }
+      ],
+      "after": {
+        "group_cid": "cidzQjqwS4YSXyWr7fceE2KVA==",
+        "group": "CMA/EMC/PIL交流群",
+        "name": "Mandy李龙艳",
+        "sender_id": "DUsmIOWhHkcdQBtpVgR9qKBA3uxAdDawr",
+        "sender_open_id": "DUsmIOWhHkcdQBtpVgR9qKBA3uxAdDawr",
+        "source": "user",
+        "decision": "publisher",
+        "confirmed_on": "2026-09-29T16:03:45+08:00",
+        "note": "1"
+      },
+      "revision": 4
+    },
+    {
+      "at": "2026-10-10T15:20:59+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cid4Z20hJsZekaGeLu1wu4mng==",
+      "group": "青岛拉美运价（海外）",
+      "identity_key": "open:DBQzGQrBQIfniiV3KaSMz9PhA3uxAdDawr",
+      "name": "DAISY-18320805912",
+      "action": "exclude",
+      "note": "非航管",
+      "before": [],
+      "after": {
+        "group_cid": "cid4Z20hJsZekaGeLu1wu4mng==",
+        "group": "青岛拉美运价（海外）",
+        "name": "DAISY-18320805912",
+        "sender_id": "DBQzGQrBQIfniiV3KaSMz9PhA3uxAdDawr",
+        "sender_open_id": "DBQzGQrBQIfniiV3KaSMz9PhA3uxAdDawr",
+        "source": "user",
+        "decision": "excluded",
+        "confirmed_on": "2026-10-10T15:20:59+08:00",
+        "note": "非航管"
+      },
+      "revision": 5
+    },
+    {
+      "at": "2026-10-10T15:21:29+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidycQtZjJla+WxNY9xTK6BwQ==",
+      "group": "土耳其价格更新",
+      "identity_key": "open:D0JqMU6rCTmZ4tjzpLiPjVaWbXtFa3TFiSR",
+      "name": "Luka Lv",
+      "action": "exclude",
+      "note": "非航管",
+      "before": [],
+      "after": {
+        "group_cid": "cidycQtZjJla+WxNY9xTK6BwQ==",
+        "group": "土耳其价格更新",
+        "name": "Luka Lv",
+        "sender_id": "D0JqMU6rCTmZ4tjzpLiPjVaWbXtFa3TFiSR",
+        "sender_open_id": "D0JqMU6rCTmZ4tjzpLiPjVaWbXtFa3TFiSR",
+        "source": "user",
+        "decision": "excluded",
+        "confirmed_on": "2026-10-10T15:21:29+08:00",
+        "note": "非航管"
+      },
+      "revision": 6
+    },
+    {
+      "at": "2026-10-10T15:21:41+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidycQtZjJla+WxNY9xTK6BwQ==",
+      "group": "土耳其价格更新",
+      "identity_key": "open:D7TVH0Uzs56H8Cy2NPd81bxA3uxAdDawr",
+      "name": "Bruce",
+      "action": "exclude",
+      "note": "非航管",
+      "before": [],
+      "after": {
+        "group_cid": "cidycQtZjJla+WxNY9xTK6BwQ==",
+        "group": "土耳其价格更新",
+        "name": "Bruce",
+        "sender_id": "D7TVH0Uzs56H8Cy2NPd81bxA3uxAdDawr",
+        "sender_open_id": "D7TVH0Uzs56H8Cy2NPd81bxA3uxAdDawr",
+        "source": "user",
+        "decision": "excluded",
+        "confirmed_on": "2026-10-10T15:21:41+08:00",
+        "note": "非航管"
+      },
+      "revision": 7
+    },
+    {
+      "at": "2026-10-10T15:21:55+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidycQtZjJla+WxNY9xTK6BwQ==",
+      "group": "土耳其价格更新",
+      "identity_key": "open:D0JqMU6rCTmbtGG2n83sBeJViSE9iP2vDqW",
+      "name": "Stacey",
+      "action": "exclude",
+      "note": "非航管",
+      "before": [],
+      "after": {
+        "group_cid": "cidycQtZjJla+WxNY9xTK6BwQ==",
+        "group": "土耳其价格更新",
+        "name": "Stacey",
+        "sender_id": "D0JqMU6rCTmbtGG2n83sBeJViSE9iP2vDqW",
+        "sender_open_id": "D0JqMU6rCTmbtGG2n83sBeJViSE9iP2vDqW",
+        "source": "user",
+        "decision": "excluded",
+        "confirmed_on": "2026-10-10T15:21:55+08:00",
+        "note": "非航管"
+      },
+      "revision": 8
+    },
+    {
+      "at": "2026-10-10T15:22:10+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidycQtZjJla+WxNY9xTK6BwQ==",
+      "group": "土耳其价格更新",
+      "identity_key": "open:D0JqMU6rCTmb3GgF3jWkCDDAGavQXb7b2",
+      "name": "曾景泓",
+      "action": "exclude",
+      "note": "非航管",
+      "before": [],
+      "after": {
+        "group_cid": "cidycQtZjJla+WxNY9xTK6BwQ==",
+        "group": "土耳其价格更新",
+        "name": "曾景泓",
+        "sender_id": "D0JqMU6rCTmb3GgF3jWkCDDAGavQXb7b2",
+        "sender_open_id": "D0JqMU6rCTmb3GgF3jWkCDDAGavQXb7b2",
+        "source": "user",
+        "decision": "excluded",
+        "confirmed_on": "2026-10-10T15:22:10+08:00",
+        "note": "非航管"
+      },
+      "revision": 9
+    },
+    {
+      "at": "2026-10-10T15:22:30+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidycQtZjJla+WxNY9xTK6BwQ==",
+      "group": "土耳其价格更新",
+      "identity_key": "open:D0JqMU6rCTmamauwXuWnc4cp7Xzva0qiiU",
+      "name": "王敏钰Ruby19047721203",
+      "action": "exclude",
+      "note": "非航管",
+      "before": [],
+      "after": {
+        "group_cid": "cidycQtZjJla+WxNY9xTK6BwQ==",
+        "group": "土耳其价格更新",
+        "name": "王敏钰Ruby19047721203",
+        "sender_id": "D0JqMU6rCTmamauwXuWnc4cp7Xzva0qiiU",
+        "sender_open_id": "D0JqMU6rCTmamauwXuWnc4cp7Xzva0qiiU",
+        "source": "user",
+        "decision": "excluded",
+        "confirmed_on": "2026-10-10T15:22:30+08:00",
+        "note": "非航管"
+      },
+      "revision": 10
+    },
+    {
+      "at": "2026-10-10T15:23:04+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cid4Z20hJsZekaGeLu1wu4mng==",
+      "group": "青岛拉美运价（海外）",
+      "identity_key": "open:DbCcHWAgLYwcwnTUo6s6iPKhA3uxAdDawr",
+      "name": "周韵莹Zoey-13517490618",
+      "action": "exclude",
+      "note": "非航管",
+      "before": [],
+      "after": {
+        "group_cid": "cid4Z20hJsZekaGeLu1wu4mng==",
+        "group": "青岛拉美运价（海外）",
+        "name": "周韵莹Zoey-13517490618",
+        "sender_id": "DbCcHWAgLYwcwnTUo6s6iPKhA3uxAdDawr",
+        "sender_open_id": "DbCcHWAgLYwcwnTUo6s6iPKhA3uxAdDawr",
+        "source": "user",
+        "decision": "excluded",
+        "confirmed_on": "2026-10-10T15:23:04+08:00",
+        "note": "非航管"
+      },
+      "revision": 11
+    },
+    {
+      "at": "2026-10-10T15:23:17+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cid4Z20hJsZekaGeLu1wu4mng==",
+      "group": "青岛拉美运价（海外）",
+      "identity_key": "open:D0JqMU6rCTmbRUV3WLRIdzg10ba1qLK7D",
+      "name": "孙园园 -Anne    18306666267",
+      "action": "exclude",
+      "note": "非航管",
+      "before": [],
+      "after": {
+        "group_cid": "cid4Z20hJsZekaGeLu1wu4mng==",
+        "group": "青岛拉美运价（海外）",
+        "name": "孙园园 -Anne    18306666267",
+        "sender_id": "D0JqMU6rCTmbRUV3WLRIdzg10ba1qLK7D",
+        "sender_open_id": "D0JqMU6rCTmbRUV3WLRIdzg10ba1qLK7D",
+        "source": "user",
+        "decision": "excluded",
+        "confirmed_on": "2026-10-10T15:23:17+08:00",
+        "note": "非航管"
+      },
+      "revision": 12
+    },
+    {
+      "at": "2026-10-10T15:23:38+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cid4Z20hJsZekaGeLu1wu4mng==",
+      "group": "青岛拉美运价（海外）",
+      "identity_key": "open:D0JqMU6rCTmYlmrnM8qog3UffC0iPsgXsiP",
+      "name": "阮毅 15820447442",
+      "action": "exclude",
+      "note": "非航管",
+      "before": [],
+      "after": {
+        "group_cid": "cid4Z20hJsZekaGeLu1wu4mng==",
+        "group": "青岛拉美运价（海外）",
+        "name": "阮毅 15820447442",
+        "sender_id": "D0JqMU6rCTmYlmrnM8qog3UffC0iPsgXsiP",
+        "sender_open_id": "D0JqMU6rCTmYlmrnM8qog3UffC0iPsgXsiP",
+        "source": "user",
+        "decision": "excluded",
+        "confirmed_on": "2026-10-10T15:23:38+08:00",
+        "note": "非航管"
+      },
+      "revision": 13
+    },
+    {
+      "at": "2026-10-10T15:47:57+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+      "group": "宁波舱位滚动更新群",
+      "identity_key": "open:DBQzGQrBQIfniiV3KaSMz9PhA3uxAdDawr",
+      "name": "DAISY-18320805912",
+      "action": "exclude",
+      "note": "管理员直接排除",
+      "before": [],
+      "after": {
+        "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+        "group": "宁波舱位滚动更新群",
+        "name": "DAISY-18320805912",
+        "sender_id": "DBQzGQrBQIfniiV3KaSMz9PhA3uxAdDawr",
+        "sender_open_id": "DBQzGQrBQIfniiV3KaSMz9PhA3uxAdDawr",
+        "source": "user",
+        "decision": "excluded",
+        "confirmed_on": "2026-10-10T15:47:57+08:00",
+        "note": "管理员直接排除"
+      },
+      "revision": 14
+    },
+    {
+      "at": "2026-10-10T15:48:00+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+      "group": "宁波舱位滚动更新群",
+      "identity_key": "open:DVhvvuwux6ClgPHr6IspDrNlD0UoIdPrm",
+      "name": "Ice",
+      "action": "exclude",
+      "note": "管理员直接排除",
+      "before": [],
+      "after": {
+        "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+        "group": "宁波舱位滚动更新群",
+        "name": "Ice",
+        "sender_id": "DVhvvuwux6ClgPHr6IspDrNlD0UoIdPrm",
+        "sender_open_id": "DVhvvuwux6ClgPHr6IspDrNlD0UoIdPrm",
+        "source": "user",
+        "decision": "excluded",
+        "confirmed_on": "2026-10-10T15:48:00+08:00",
+        "note": "管理员直接排除"
+      },
+      "revision": 15
+    },
+    {
+      "at": "2026-10-10T15:48:04+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+      "group": "宁波舱位滚动更新群",
+      "identity_key": "open:DGZLzRXowJZNgPHr6IspDrNlD0UoIdPrm",
+      "name": "Molical 13777051449",
+      "action": "exclude",
+      "note": "管理员直接排除",
+      "before": [],
+      "after": {
+        "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+        "group": "宁波舱位滚动更新群",
+        "name": "Molical 13777051449",
+        "sender_id": "DGZLzRXowJZNgPHr6IspDrNlD0UoIdPrm",
+        "sender_open_id": "DGZLzRXowJZNgPHr6IspDrNlD0UoIdPrm",
+        "source": "user",
+        "decision": "excluded",
+        "confirmed_on": "2026-10-10T15:48:04+08:00",
+        "note": "管理员直接排除"
+      },
+      "revision": 16
+    },
+    {
+      "at": "2026-10-10T15:48:20+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+      "group": "宁波舱位滚动更新群",
+      "identity_key": "open:D0JqMU6rCTmYWAS1TVGDoElI6lYgOmiiVx",
+      "name": "孙丽洁 Emma -0574-87236750",
+      "action": "confirm",
+      "note": "航管",
+      "before": [],
+      "after": {
+        "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+        "group": "宁波舱位滚动更新群",
+        "name": "孙丽洁 Emma -0574-87236750",
+        "sender_id": "D0JqMU6rCTmYWAS1TVGDoElI6lYgOmiiVx",
+        "sender_open_id": "D0JqMU6rCTmYWAS1TVGDoElI6lYgOmiiVx",
+        "source": "user",
+        "decision": "publisher",
+        "confirmed_on": "2026-10-10T15:48:20+08:00",
+        "note": "航管"
+      },
+      "revision": 17
+    },
+    {
+      "at": "2026-10-10T15:49:10+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidycQtZjJla+WxNY9xTK6BwQ==",
+      "group": "土耳其价格更新",
+      "identity_key": "open:D0JqMU6rCTmafUhKd0Ilu4pYiS51NTmnJh",
+      "name": "杨恺怡",
+      "action": "exclude",
+      "note": "管理员直接排除",
+      "before": [],
+      "after": {
+        "group_cid": "cidycQtZjJla+WxNY9xTK6BwQ==",
+        "group": "土耳其价格更新",
+        "name": "杨恺怡",
+        "sender_id": "D0JqMU6rCTmafUhKd0Ilu4pYiS51NTmnJh",
+        "sender_open_id": "D0JqMU6rCTmafUhKd0Ilu4pYiS51NTmnJh",
+        "source": "user",
+        "decision": "excluded",
+        "confirmed_on": "2026-10-10T15:49:10+08:00",
+        "note": "管理员直接排除"
+      },
+      "revision": 18
+    },
+    {
+      "at": "2026-10-10T15:49:14+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidycQtZjJla+WxNY9xTK6BwQ==",
+      "group": "土耳其价格更新",
+      "identity_key": "open:DS8sQ3b1XYjKK3iStf0wXz3RA3uxAdDawr",
+      "name": "王会兰 Willa",
+      "action": "exclude",
+      "note": "管理员直接排除",
+      "before": [],
+      "after": {
+        "group_cid": "cidycQtZjJla+WxNY9xTK6BwQ==",
+        "group": "土耳其价格更新",
+        "name": "王会兰 Willa",
+        "sender_id": "DS8sQ3b1XYjKK3iStf0wXz3RA3uxAdDawr",
+        "sender_open_id": "DS8sQ3b1XYjKK3iStf0wXz3RA3uxAdDawr",
+        "source": "user",
+        "decision": "excluded",
+        "confirmed_on": "2026-10-10T15:49:14+08:00",
+        "note": "管理员直接排除"
+      },
+      "revision": 19
+    },
+    {
+      "at": "2026-10-10T15:49:17+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidycQtZjJla+WxNY9xTK6BwQ==",
+      "group": "土耳其价格更新",
+      "identity_key": "open:D0JqMU6rCTmbwiiPGSeCqliPnK46EpRd3VL",
+      "name": "阮玲芳",
+      "action": "exclude",
+      "note": "管理员直接排除",
+      "before": [],
+      "after": {
+        "group_cid": "cidycQtZjJla+WxNY9xTK6BwQ==",
+        "group": "土耳其价格更新",
+        "name": "阮玲芳",
+        "sender_id": "D0JqMU6rCTmbwiiPGSeCqliPnK46EpRd3VL",
+        "sender_open_id": "D0JqMU6rCTmbwiiPGSeCqliPnK46EpRd3VL",
+        "source": "user",
+        "decision": "excluded",
+        "confirmed_on": "2026-10-10T15:49:17+08:00",
+        "note": "管理员直接排除"
+      },
+      "revision": 20
+    },
+    {
+      "at": "2026-10-10T15:49:20+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidycQtZjJla+WxNY9xTK6BwQ==",
+      "group": "土耳其价格更新",
+      "identity_key": "open:D0JqMU6rCTmZmnlw8pWJrNciS43H9YgGEX",
+      "name": "陈静怡",
+      "action": "exclude",
+      "note": "管理员直接排除",
+      "before": [],
+      "after": {
+        "group_cid": "cidycQtZjJla+WxNY9xTK6BwQ==",
+        "group": "土耳其价格更新",
+        "name": "陈静怡",
+        "sender_id": "D0JqMU6rCTmZmnlw8pWJrNciS43H9YgGEX",
+        "sender_open_id": "D0JqMU6rCTmZmnlw8pWJrNciS43H9YgGEX",
+        "source": "user",
+        "decision": "excluded",
+        "confirmed_on": "2026-10-10T15:49:20+08:00",
+        "note": "管理员直接排除"
+      },
+      "revision": 21
+    },
+    {
+      "at": "2026-10-10T16:08:18+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidTKlF4IcDiQonoNQY3qkHow==",
+      "group": "欧洲价格更新",
+      "identity_key": "open:D0JqMU6rCTmaNZeuRUVhTl0IwvhpbriiyT",
+      "name": "Nora.Chen",
+      "action": "exclude",
+      "note": "管理员直接排除",
+      "before": [],
+      "after": {
+        "name": "Nora.Chen",
+        "sender_id": "D0JqMU6rCTmaNZeuRUVhTl0IwvhpbriiyT",
+        "sender_open_id": "D0JqMU6rCTmaNZeuRUVhTl0IwvhpbriiyT",
+        "source": "user",
+        "scope": "global",
+        "decision": "excluded",
+        "excluded_on": "2026-10-10T16:08:18+08:00",
+        "source_groups": [
+          "欧洲价格更新"
+        ],
+        "note": "管理员直接排除"
+      },
+      "revision": 22
+    },
+    {
+      "at": "2026-10-16T14:22:47+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+      "group": "宁波舱位滚动更新群",
+      "identity_key": "open:D0JqMU6rCTmZr9p5Utp0m3wVZohwZkFKk",
+      "name": "虞方磊Ted 17815941077",
+      "action": "confirm",
+      "note": "管理员直接确认",
+      "before": [],
+      "after": {
+        "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+        "group": "宁波舱位滚动更新群",
+        "name": "虞方磊Ted 17815941077",
+        "sender_id": "D0JqMU6rCTmZr9p5Utp0m3wVZohwZkFKk",
+        "sender_open_id": "D0JqMU6rCTmZr9p5Utp0m3wVZohwZkFKk",
+        "source": "user",
+        "decision": "publisher",
+        "confirmed_on": "2026-10-16T14:22:47+08:00",
+        "note": "管理员直接确认"
+      },
+      "revision": 23
+    },
+    {
+      "at": "2026-10-16T14:22:52+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+      "group": "宁波舱位滚动更新群",
+      "identity_key": "open:DmlKBtOJVTiiEgHyD8ryQryRA3uxAdDawr",
+      "name": "苏楠Susu-18668579785",
+      "action": "confirm",
+      "note": "管理员直接确认",
+      "before": [],
+      "after": {
+        "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+        "group": "宁波舱位滚动更新群",
+        "name": "苏楠Susu-18668579785",
+        "sender_id": "DmlKBtOJVTiiEgHyD8ryQryRA3uxAdDawr",
+        "sender_open_id": "DmlKBtOJVTiiEgHyD8ryQryRA3uxAdDawr",
+        "source": "user",
+        "decision": "publisher",
+        "confirmed_on": "2026-10-16T14:22:52+08:00",
+        "note": "管理员直接确认"
+      },
+      "revision": 24
+    },
+    {
+      "at": "2026-10-16T14:22:59+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+      "group": "宁波舱位滚动更新群",
+      "identity_key": "open:DUS8wveGWiSI8q5e5dO7ErzBA3uxAdDawr",
+      "name": "罗瑶 Lorraine-13666437390",
+      "action": "confirm",
+      "note": "管理员直接确认",
+      "before": [],
+      "after": {
+        "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+        "group": "宁波舱位滚动更新群",
+        "name": "罗瑶 Lorraine-13666437390",
+        "sender_id": "DUS8wveGWiSI8q5e5dO7ErzBA3uxAdDawr",
+        "sender_open_id": "DUS8wveGWiSI8q5e5dO7ErzBA3uxAdDawr",
+        "source": "user",
+        "decision": "publisher",
+        "confirmed_on": "2026-10-16T14:22:59+08:00",
+        "note": "管理员直接确认"
+      },
+      "revision": 25
+    },
+    {
+      "at": "2026-10-16T14:23:09+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+      "group": "宁波舱位滚动更新群",
+      "identity_key": "open:DTWZAK7ClMphQBtpVgR9qKBA3uxAdDawr",
+      "name": "徐斐Sophie-18957416149",
+      "action": "confirm",
+      "note": "管理员直接确认",
+      "before": [],
+      "after": {
+        "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+        "group": "宁波舱位滚动更新群",
+        "name": "徐斐Sophie-18957416149",
+        "sender_id": "DTWZAK7ClMphQBtpVgR9qKBA3uxAdDawr",
+        "sender_open_id": "DTWZAK7ClMphQBtpVgR9qKBA3uxAdDawr",
+        "source": "user",
+        "decision": "publisher",
+        "confirmed_on": "2026-10-16T14:23:09+08:00",
+        "note": "管理员直接确认"
+      },
+      "revision": 26
+    },
+    {
+      "at": "2026-10-16T14:23:16+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+      "group": "宁波舱位滚动更新群",
+      "identity_key": "open:D0JqMU6rCTmZPJcAfRjSkbd3slnjp5anh",
+      "name": "俞文清 15268415150",
+      "action": "confirm",
+      "note": "管理员直接确认",
+      "before": [],
+      "after": {
+        "group_cid": "cidPxOj0L5yCh+5nbOQL4JbRQ==",
+        "group": "宁波舱位滚动更新群",
+        "name": "俞文清 15268415150",
+        "sender_id": "D0JqMU6rCTmZPJcAfRjSkbd3slnjp5anh",
+        "sender_open_id": "D0JqMU6rCTmZPJcAfRjSkbd3slnjp5anh",
+        "source": "user",
+        "decision": "publisher",
+        "confirmed_on": "2026-10-16T14:23:16+08:00",
+        "note": "管理员直接确认"
+      },
+      "revision": 27
+    },
+    {
+      "at": "2026-10-16T14:23:26+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "ciddW/ROT0bCoK40o/mJ14Lvg==",
+      "group": "北埃及价格更新",
+      "identity_key": "open:D0JqMU6rCTmad7MUupgYK4NhBCkVuHfUB",
+      "name": "周如意Ruby",
+      "action": "exclude",
+      "note": "管理员直接排除",
+      "before": [],
+      "after": {
+        "name": "周如意Ruby",
+        "sender_id": "D0JqMU6rCTmad7MUupgYK4NhBCkVuHfUB",
+        "sender_open_id": "D0JqMU6rCTmad7MUupgYK4NhBCkVuHfUB",
+        "source": "user",
+        "scope": "global",
+        "decision": "excluded",
+        "excluded_on": "2026-10-16T14:23:26+08:00",
+        "source_groups": [
+          "北埃及价格更新"
+        ],
+        "note": "管理员直接排除"
+      },
+      "revision": 28
+    },
+    {
+      "at": "2026-10-16T14:23:29+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "ciddW/ROT0bCoK40o/mJ14Lvg==",
+      "group": "北埃及价格更新",
+      "identity_key": "open:DgFer8EcpnaUPsGCgDiSPDfRA3uxAdDawr",
+      "name": "Tia Chen",
+      "action": "exclude",
+      "note": "管理员直接排除",
+      "before": [],
+      "after": {
+        "name": "Tia Chen",
+        "sender_id": "DgFer8EcpnaUPsGCgDiSPDfRA3uxAdDawr",
+        "sender_open_id": "DgFer8EcpnaUPsGCgDiSPDfRA3uxAdDawr",
+        "source": "user",
+        "scope": "global",
+        "decision": "excluded",
+        "excluded_on": "2026-10-16T14:23:29+08:00",
+        "source_groups": [
+          "北埃及价格更新"
+        ],
+        "note": "管理员直接排除"
+      },
+      "revision": 29
+    },
+    {
+      "at": "2026-10-16T14:23:32+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "ciddW/ROT0bCoK40o/mJ14Lvg==",
+      "group": "北埃及价格更新",
+      "identity_key": "open:D0JqMU6rCTmazALkM5JCMlpOiP2bnVBrwB",
+      "name": "Ann",
+      "action": "exclude",
+      "note": "管理员直接排除",
+      "before": [],
+      "after": {
+        "name": "Ann",
+        "sender_id": "D0JqMU6rCTmazALkM5JCMlpOiP2bnVBrwB",
+        "sender_open_id": "D0JqMU6rCTmazALkM5JCMlpOiP2bnVBrwB",
+        "source": "user",
+        "scope": "global",
+        "decision": "excluded",
+        "excluded_on": "2026-10-16T14:23:32+08:00",
+        "source_groups": [
+          "北埃及价格更新"
+        ],
+        "note": "管理员直接排除"
+      },
+      "revision": 30
+    },
+    {
+      "at": "2026-10-16T14:23:36+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "ciddW/ROT0bCoK40o/mJ14Lvg==",
+      "group": "北埃及价格更新",
+      "identity_key": "open:D0JqMU6rCTmb0t8oRVMtqpjWvAnfiSnaO8",
+      "name": "陈霞",
+      "action": "exclude",
+      "note": "管理员直接排除",
+      "before": [],
+      "after": {
+        "name": "陈霞",
+        "sender_id": "D0JqMU6rCTmb0t8oRVMtqpjWvAnfiSnaO8",
+        "sender_open_id": "D0JqMU6rCTmb0t8oRVMtqpjWvAnfiSnaO8",
+        "source": "user",
+        "scope": "global",
+        "decision": "excluded",
+        "excluded_on": "2026-10-16T14:23:36+08:00",
+        "source_groups": [
+          "北埃及价格更新"
+        ],
+        "note": "管理员直接排除"
+      },
+      "revision": 31
+    },
+    {
+      "at": "2026-10-16T14:23:39+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "ciddW/ROT0bCoK40o/mJ14Lvg==",
+      "group": "北埃及价格更新",
+      "identity_key": "open:DzB2L9aY7sgM7uzxRIMq9T5WDZmWhGfhH",
+      "name": "杜佳仪 Alby",
+      "action": "confirm",
+      "note": "管理员直接确认",
+      "before": [],
+      "after": {
+        "group_cid": "ciddW/ROT0bCoK40o/mJ14Lvg==",
+        "group": "北埃及价格更新",
+        "name": "杜佳仪 Alby",
+        "sender_id": "DzB2L9aY7sgM7uzxRIMq9T5WDZmWhGfhH",
+        "sender_open_id": "DzB2L9aY7sgM7uzxRIMq9T5WDZmWhGfhH",
+        "source": "user",
+        "decision": "publisher",
+        "confirmed_on": "2026-10-16T14:23:39+08:00",
+        "note": "管理员直接确认"
+      },
+      "revision": 32
+    },
+    {
+      "at": "2026-10-16T14:23:44+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidjovIVW4/c/IPqL1m+RFLgg==",
+      "group": "厦门运价总群",
+      "identity_key": "open:DXQQ5WzliPmMXiiV3KaSMz9PhA3uxAdDawr",
+      "name": "傅秋泓",
+      "action": "confirm",
+      "note": "管理员直接确认",
+      "before": [],
+      "after": {
+        "group_cid": "cidjovIVW4/c/IPqL1m+RFLgg==",
+        "group": "厦门运价总群",
+        "name": "傅秋泓",
+        "sender_id": "DXQQ5WzliPmMXiiV3KaSMz9PhA3uxAdDawr",
+        "sender_open_id": "DXQQ5WzliPmMXiiV3KaSMz9PhA3uxAdDawr",
+        "source": "user",
+        "decision": "publisher",
+        "confirmed_on": "2026-10-16T14:23:44+08:00",
+        "note": "管理员直接确认"
+      },
+      "revision": 33
+    },
+    {
+      "at": "2026-10-16T14:23:47+08:00",
+      "actor": "admin",
+      "actor_id": "usr_2d59e870ff365f089a557e64331014e0",
+      "group_cid": "cidjovIVW4/c/IPqL1m+RFLgg==",
+      "group": "厦门运价总群",
+      "identity_key": "open:D0JqMU6rCTmYePTfHJNIGEgfEtVp1RXX5",
+      "name": "郭虹",
+      "action": "confirm",
+      "note": "管理员直接确认",
+      "before": [],
+      "after": {
+        "group_cid": "cidjovIVW4/c/IPqL1m+RFLgg==",
+        "group": "厦门运价总群",
+        "name": "郭虹",
+        "sender_id": "D0JqMU6rCTmYePTfHJNIGEgfEtVp1RXX5",
+        "sender_open_id": "D0JqMU6rCTmYePTfHJNIGEgfEtVp1RXX5",
+        "source": "user",
+        "decision": "publisher",
+        "confirmed_on": "2026-10-16T14:23:47+08:00",
+        "note": "管理员直接确认"
+      },
+      "revision": 34
+    }
+  ],
+  "exclusions": [
+    {
+      "name": "曹金平",
+      "sender_id": "DdR66eiixnvZeK3iStf0wXz3RA3uxAdDawr",
+      "sender_open_id": "DdR66eiixnvZeK3iStf0wXz3RA3uxAdDawr",
+      "source": "user",
+      "scope": "global",
+      "decision": "excluded",
+      "excluded_on": "2026-09-29T11:48:17+08:00",
+      "note": "销售",
+      "source_groups": [
+        "宁波舱位滚动更新群"
+      ]
+    },
+    {
+      "name": "DAISY-18320805912",
+      "sender_id": "DBQzGQrBQIfniiV3KaSMz9PhA3uxAdDawr",
+      "sender_open_id": "DBQzGQrBQIfniiV3KaSMz9PhA3uxAdDawr",
+      "source": "user",
+      "scope": "global",
+      "decision": "excluded",
+      "excluded_on": "2026-10-10T15:20:59+08:00",
+      "note": "非航管",
+      "source_groups": [
+        "宁波舱位滚动更新群",
+        "青岛拉美运价（海外）"
+      ]
+    },
+    {
+      "name": "Luka Lv",
+      "sender_id": "D0JqMU6rCTmZ4tjzpLiPjVaWbXtFa3TFiSR",
+      "sender_open_id": "D0JqMU6rCTmZ4tjzpLiPjVaWbXtFa3TFiSR",
+      "source": "user",
+      "scope": "global",
+      "decision": "excluded",
+      "excluded_on": "2026-10-10T15:21:29+08:00",
+      "note": "非航管",
+      "source_groups": [
+        "土耳其价格更新"
+      ]
+    },
+    {
+      "name": "Bruce",
+      "sender_id": "D7TVH0Uzs56H8Cy2NPd81bxA3uxAdDawr",
+      "sender_open_id": "D7TVH0Uzs56H8Cy2NPd81bxA3uxAdDawr",
+      "source": "user",
+      "scope": "global",
+      "decision": "excluded",
+      "excluded_on": "2026-10-10T15:21:41+08:00",
+      "note": "非航管",
+      "source_groups": [
+        "土耳其价格更新"
+      ]
+    },
+    {
+      "name": "Stacey",
+      "sender_id": "D0JqMU6rCTmbtGG2n83sBeJViSE9iP2vDqW",
+      "sender_open_id": "D0JqMU6rCTmbtGG2n83sBeJViSE9iP2vDqW",
+      "source": "user",
+      "scope": "global",
+      "decision": "excluded",
+      "excluded_on": "2026-10-10T15:21:55+08:00",
+      "note": "非航管",
+      "source_groups": [
+        "土耳其价格更新"
+      ]
+    },
+    {
+      "name": "曾景泓",
+      "sender_id": "D0JqMU6rCTmb3GgF3jWkCDDAGavQXb7b2",
+      "sender_open_id": "D0JqMU6rCTmb3GgF3jWkCDDAGavQXb7b2",
+      "source": "user",
+      "scope": "global",
+      "decision": "excluded",
+      "excluded_on": "2026-10-10T15:22:10+08:00",
+      "note": "非航管",
+      "source_groups": [
+        "土耳其价格更新"
+      ]
+    },
+    {
+      "name": "王敏钰Ruby19047721203",
+      "sender_id": "D0JqMU6rCTmamauwXuWnc4cp7Xzva0qiiU",
+      "sender_open_id": "D0JqMU6rCTmamauwXuWnc4cp7Xzva0qiiU",
+      "source": "user",
+      "scope": "global",
+      "decision": "excluded",
+      "excluded_on": "2026-10-10T15:22:30+08:00",
+      "note": "非航管",
+      "source_groups": [
+        "土耳其价格更新"
+      ]
+    },
+    {
+      "name": "周韵莹Zoey-13517490618",
+      "sender_id": "DbCcHWAgLYwcwnTUo6s6iPKhA3uxAdDawr",
+      "sender_open_id": "DbCcHWAgLYwcwnTUo6s6iPKhA3uxAdDawr",
+      "source": "user",
+      "scope": "global",
+      "decision": "excluded",
+      "excluded_on": "2026-10-10T15:23:04+08:00",
+      "note": "非航管",
+      "source_groups": [
+        "青岛拉美运价（海外）"
+      ]
+    },
+    {
+      "name": "孙园园 -Anne    18306666267",
+      "sender_id": "D0JqMU6rCTmbRUV3WLRIdzg10ba1qLK7D",
+      "sender_open_id": "D0JqMU6rCTmbRUV3WLRIdzg10ba1qLK7D",
+      "source": "user",
+      "scope": "global",
+      "decision": "excluded",
+      "excluded_on": "2026-10-10T15:23:17+08:00",
+      "note": "非航管",
+      "source_groups": [
+        "青岛拉美运价（海外）"
+      ]
+    },
+    {
+      "name": "阮毅 15820447442",
+      "sender_id": "D0JqMU6rCTmYlmrnM8qog3UffC0iPsgXsiP",
+      "sender_open_id": "D0JqMU6rCTmYlmrnM8qog3UffC0iPsgXsiP",
+      "source": "user",
+      "scope": "global",
+      "decision": "excluded",
+      "excluded_on": "2026-10-10T15:23:38+08:00",
+      "note": "非航管",
+      "source_groups": [
+        "青岛拉美运价（海外）"
+      ]
+    },
+    {
+      "name": "Ice",
+      "sender_id": "DVhvvuwux6ClgPHr6IspDrNlD0UoIdPrm",
+      "sender_open_id": "DVhvvuwux6ClgPHr6IspDrNlD0UoIdPrm",
+      "source": "user",
+      "scope": "global",
+      "decision": "excluded",
+      "excluded_on": "2026-10-10T15:48:00+08:00",
+      "note": "管理员直接排除",
+      "source_groups": [
+        "宁波舱位滚动更新群"
+      ]
+    },
+    {
+      "name": "Molical 13777051449",
+      "sender_id": "DGZLzRXowJZNgPHr6IspDrNlD0UoIdPrm",
+      "sender_open_id": "DGZLzRXowJZNgPHr6IspDrNlD0UoIdPrm",
+      "source": "user",
+      "scope": "global",
+      "decision": "excluded",
+      "excluded_on": "2026-10-10T15:48:04+08:00",
+      "note": "管理员直接排除",
+      "source_groups": [
+        "宁波舱位滚动更新群"
+      ]
+    },
+    {
+      "name": "杨恺怡",
+      "sender_id": "D0JqMU6rCTmafUhKd0Ilu4pYiS51NTmnJh",
+      "sender_open_id": "D0JqMU6rCTmafUhKd0Ilu4pYiS51NTmnJh",
+      "source": "user",
+      "scope": "global",
+      "decision": "excluded",
+      "excluded_on": "2026-10-10T15:49:10+08:00",
+      "note": "管理员直接排除",
+      "source_groups": [
+        "土耳其价格更新"
+      ]
+    },
+    {
+      "name": "王会兰 Willa",
+      "sender_id": "DS8sQ3b1XYjKK3iStf0wXz3RA3uxAdDawr",
+      "sender_open_id": "DS8sQ3b1XYjKK3iStf0wXz3RA3uxAdDawr",
+      "source": "user",
+      "scope": "global",
+      "decision": "excluded",
+      "excluded_on": "2026-10-10T15:49:14+08:00",
+      "note": "管理员直接排除",
+      "source_groups": [
+        "土耳其价格更新"
+      ]
+    },
+    {
+      "name": "阮玲芳",
+      "sender_id": "D0JqMU6rCTmbwiiPGSeCqliPnK46EpRd3VL",
+      "sender_open_id": "D0JqMU6rCTmbwiiPGSeCqliPnK46EpRd3VL",
+      "source": "user",
+      "scope": "global",
+      "decision": "excluded",
+      "excluded_on": "2026-10-10T15:49:17+08:00",
+      "note": "管理员直接排除",
+      "source_groups": [
+        "土耳其价格更新"
+      ]
+    },
+    {
+      "name": "陈静怡",
+      "sender_id": "D0JqMU6rCTmZmnlw8pWJrNciS43H9YgGEX",
+      "sender_open_id": "D0JqMU6rCTmZmnlw8pWJrNciS43H9YgGEX",
+      "source": "user",
+      "scope": "global",
+      "decision": "excluded",
+      "excluded_on": "2026-10-10T15:49:20+08:00",
+      "note": "管理员直接排除",
+      "source_groups": [
+        "土耳其价格更新"
+      ]
+    },
+    {
+      "name": "Nora.Chen",
+      "sender_id": "D0JqMU6rCTmaNZeuRUVhTl0IwvhpbriiyT",
+      "sender_open_id": "D0JqMU6rCTmaNZeuRUVhTl0IwvhpbriiyT",
+      "source": "user",
+      "scope": "global",
+      "decision": "excluded",
+      "excluded_on": "2026-10-10T16:08:18+08:00",
+      "note": "管理员直接排除",
+      "source_groups": [
+        "欧洲价格更新"
+      ]
+    },
+    {
+      "name": "周如意Ruby",
+      "sender_id": "D0JqMU6rCTmad7MUupgYK4NhBCkVuHfUB",
+      "sender_open_id": "D0JqMU6rCTmad7MUupgYK4NhBCkVuHfUB",
+      "source": "user",
+      "scope": "global",
+      "decision": "excluded",
+      "excluded_on": "2026-10-16T14:23:26+08:00",
+      "note": "管理员直接排除",
+      "source_groups": [
+        "北埃及价格更新"
+      ]
+    },
+    {
+      "name": "Tia Chen",
+      "sender_id": "DgFer8EcpnaUPsGCgDiSPDfRA3uxAdDawr",
+      "sender_open_id": "DgFer8EcpnaUPsGCgDiSPDfRA3uxAdDawr",
+      "source": "user",
+      "scope": "global",
+      "decision": "excluded",
+      "excluded_on": "2026-10-16T14:23:29+08:00",
+      "note": "管理员直接排除",
+      "source_groups": [
+        "北埃及价格更新"
+      ]
+    },
+    {
+      "name": "Ann",
+      "sender_id": "D0JqMU6rCTmazALkM5JCMlpOiP2bnVBrwB",
+      "sender_open_id": "D0JqMU6rCTmazALkM5JCMlpOiP2bnVBrwB",
+      "source": "user",
+      "scope": "global",
+      "decision": "excluded",
+      "excluded_on": "2026-10-16T14:23:32+08:00",
+      "note": "管理员直接排除",
+      "source_groups": [
+        "北埃及价格更新"
+      ]
+    },
+    {
+      "name": "陈霞",
+      "sender_id": "D0JqMU6rCTmb0t8oRVMtqpjWvAnfiSnaO8",
+      "sender_open_id": "D0JqMU6rCTmb0t8oRVMtqpjWvAnfiSnaO8",
+      "source": "user",
+      "scope": "global",
+      "decision": "excluded",
+      "excluded_on": "2026-10-16T14:23:36+08:00",
+      "note": "管理员直接排除",
+      "source_groups": [
+        "北埃及价格更新"
+      ]
+    }
+  ]
+}

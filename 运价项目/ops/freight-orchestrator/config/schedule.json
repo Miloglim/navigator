@@ -1,0 +1,29 @@
+{
+  "enabled": true,
+  "tick_seconds": 10,
+  "weekdays": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "shard_offsets_seconds": {
+    "A": 0,
+    "B": 300,
+    "C": 600,
+    "D": 900
+  },
+  "windows": [
+    {
+      "start": "09:00",
+      "end": "13:59",
+      "interval_seconds": 3600
+    },
+    {
+      "start": "14:00",
+      "end": "18:59",
+      "interval_seconds": 1800
+    }
+  ]
+}

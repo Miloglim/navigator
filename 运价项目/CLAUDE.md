@@ -2,6 +2,11 @@
 
 - 中心账号模式下，Navigator 本地 `operators` 只承担业务身份和产品偏好镜像，不能继续作为昵称、头像或成长真源。本地会话查询不得要求 `password_hash` 非空。
 - 中心模式改密必须调用 `/api/account/password`；不得继续执行本地 `UPDATE operators SET password_hash=...`。
+- 2026-10-26：中心桌面登录返回 `mustChangePassword=true` 时，必须先建立只允许退出和改密的本地受限会话，不能继续查询会过滤首次改密账号的 `/api/navigator/access`。业务接口保持 `password_change_required`；改密成功并撤销旧会话后，用户重新登录才进入正常产品准入。
+- 登录失败不得向匿名用户区分账号不存在与密码错误，统一“账号或密码错误”；只有密码已经验证的停用/归档账号、已认证无 Navigator 准入和中心服务不可用分别提示。不得把“无权限”当成首登改密的通用兜底。
+- 2026-10-26：中心模式普通 GET 的 30 秒鉴权缓存只能使用明确白名单，写操作、导出、管理、监控、账号维护和未列明接口必须实时验证。缓存键同时绑定本地会话和中心访问令牌；登出、改密、撤权及令牌轮换必须清理，不能把读缓存误用到敏感操作。
+- 首屏字体必须同源加载；不要再把 Google Fonts 样式表放进渲染关键路径。字体路由使用固定文件白名单、`font/woff2` 和 immutable 缓存，不接受任意路径。
+- 当前正式 Navigator 页面本体经本机 SSH 隧道回源，整页 `no-store`。150 并发健康/状态接口通过，不代表 150 个整页冷加载通过；容量验收必须单独测整页。面向 150 人同时打开时，先把静态 HTML/JS/CSS/字体迁到云端，再保留小型 API 回源。
 - 业务经验先写本地不可变事件和 `account_growth_sync_outbox`，再补传中心；不能只在页面读取时临时计算，也不能因中心暂时离线丢失事件。
 
 - 2026-10-21：`manualdb.query_grouped` 的 SQLite 缓存探测必须在 PostgreSQL 适配器转换。漏掉 `PRAGMA database_list` 会先让事务进入 aborted 状态，表面错误却是后续 `/api/rates_grouped` 的“当前事务被终止”；不能只捕获或重试最终查询。
@@ -148,6 +153,9 @@
 - Windows `Get-ScheduledTaskInfo` 的结果字段是 `LastTaskResult`，不是 `LastResult`。监控须绑定任务开始/完成时间和对应日期的回执；历史回补生成的较新文件不可冒充本轮回执。0 字节 raw 的“成功”回执必须报警。
 - `noise` 决策不能仅因为模板没命中或图片未刷新就放行。带价内容、旧报价询问、附加费通知、缺核心字段四者要分别判断；旁路价格样式审计持续报警直到有记录覆盖或有可核实的询问说明。
 - DWS `--page-all` 的聚合回包没有 `success` 键，但有 `complete/paginationKnown/hasMore/count/failedCount`；不能沿用单页的 `success=true` 判定。生成拉取命令启用自动翻页，且校验页数/截断/解密失败与消息数一致后才接收。
+- 固定窗口只读盘点调用 DWS `chat message list --page-all` 时可能瞬态返回 `exit=1`；同一完整窗口应重拉，最多 3 次并保留完整性校验。不能接受部分 JSON、复用旧盘点结果或用瞬时失败否定真实缺口。
+- 部分交付不能用 `/api/validate.resolved` 直接推断 `/api/pending` 最终身份：未知港名可能先原样返回、再在 pending 归一为空并合并。必须读取 `name_resolution` 的 unknown 状态做稳定身份，把原始港名保留在备注和 review issue；合并后按唯一待审读回，不能重送造成重复。
+- 技术失败不能只把异常字符串写进 review issue；worker 必须把已持久化的前序阶段结果交给上报器，记录卡点、完成阶段、识别/盘点数量、事实摘要和人工问题。`extract` 已成功时必须先保留已有产品并形成 `failure_kind=technical` 的部分待核；extract 之前失败才保留 `FAILED` 与父批次阻塞。不能靠切换模型或无限重试掩盖。
 - `chat +chat-messages` 的回包可用 `messageId`/`text`，而旧 `chat message list` 回包使用 `openMessageId`/`content`；压缩适配必须兼容两套字段，但不能因此放宽 `complete/paginationKnown/hasMore` 完整性校验。
 - 同一张报价跨群转发时，`/api/pending` 可能去重：请求 18 条但实际仅新增 9 条。不能按请求数或 `submit_queue` 的消息 ID 推断两个来源都已有待审记录；旁路以只读 PostgreSQL 来源 ID 为准，提交回执同时记录 requested/staged 并对部分新增报警。
 - 船期表的各起运港 ETD 可能不同；图片价表共享价格不代表船期也共享。逐起运港核对原图，不能统一复制一个 10/22。
@@ -277,9 +285,25 @@
 - 2026-10-12：DWS父消息resourceRefs可能合并引用资源，必须读取每资源download.arguments.message-id，不以父消息ID覆盖引用图片owner。旧排队源从不可变pull回执恢复并保留恢复记录。
 - 2026-10-12：同价同港同柜型的舱位表可能有多个真实提单/物理行，不能以产品维度去掉独立来源行；提单/图行身份进入中间对账及既有备注。NAC合约类型不是航线服务；舱位价格可能写在船公司列，盘点不能只看独立价格列。
 - 2026-10-12：待核通知HTTP异常不能越出worker异常处理杀死执行线程，否则健康线程继续心跳而业务已停止。记录通知失败，保留原任务失败及重试状态。
+- 2026-10-22：业务失败不能只把消息留在 control.sqlite3 的 `NEEDS_REVIEW/BLOCKED`。已识别产品必须先通过 `/api/pending` 写入并读回，同时写 `/api/review-issues`；一个产品都没有也要留下可见待核。只有两边回执都确认后，消息才能进入 `PARTIAL_REVIEW_COMPLETE` 并让父批次对账/推进水位，且不得把该终态显示成完整解析或允许整组一键放行。
+- 2026-10-23：确认不是可订舱报价的候选必须在 `partial_records` 内过滤，不得再生成待审核占位；至少两个运价核心字段缺失、明确不收/不接或无基础价格时只写入 review issue 排除证据。`coverage` 只比较有基础价格的 rate 产品，空价、纯附加费和 space 不参与运价价格矩阵；区域基本港通过 `port_groups.aliases` 统一识别，泛称 `Base port` 仍按航线上下文处理，禁止全局猜测。
+- 2026-10-23：Agent 的待审核职责边界是“修正数据、补齐证据、移出明确非产品、留下待核说明”，**不得调用任何 approve/release 路径或直接执行 `approve_pending*`**。即使用户说“AI 主审”，业务最终放行也必须由用户本人检查后点击；Agent 完成后保持 `review_status=awaiting` 并报告改动。
+- 2026-10-23：`partial_review`、`message_partial_review` 是解析完整性观测信息，不是放行判定。放行只以本行 `check_status` 和同源组是否仍有 `failed` 为准；组内全 passed 时不能因 partial 元数据再次拦住全局一键放行，组内任一 failed 才整组连坐。
+- 2026-10-23：`A晚开到B`、`A晚开B`、`A晚开至B` 在所有群都表示原计划 A 开、延误后实际 B 开，`船期ETD=B`；不能取 A，也不能把 A-B 当报价有效期。
+- 2026-10-23：部分交付只能写 `section_role=product`。提单清单、参考船期表、Local 费用和询价等 `reference/local_charge/inquiry` 只保留在原件、排除清单和 review issue，不能因为机械字段凑齐就变成可放行舱位/运价。
+- 2026-10-23：条目审核与数据修正只操作正式端 `8795 + 正式 PostgreSQL`；开发端 `8798` 不参与待审核修正、驳回或读回验收。不得先在开发端改副本再同步，正式端就是唯一处理对象。
+- 2026-10-26：补缺模式的业务判重不能把备注中的 `来源行` 当产品差异。同一价表的港口、船司、柜型、裸价、有效期、船期、船名和附加条款都相同时，重复物理行只对应一条可售产品；价格、舱量或条件不同仍要分别保留。来源行只用于证据定位。
 
 - 2026-10-12：ETD10.20-10.31是开船日期窗口，只保留备注、单日ETD空；不得填入船期截关。真实截关与窗口无关，保持原值。
 # 40GP 价格档归一口径（2026-10-16）
 
 本项目最终柜型仍为 `20GP / 40HQ/HC / 40NOR / 45HQ/HC` 四档。按已确认业务口径，入口或公司接口返回的 `40GP` 归入 `40HQ/HC` 价格档；原始消息和公司响应保持原值用于溯源。船司线上请求编号 `11` 与 `12` 仍按上游契约分别发送，只统一前端报价字段；`45HQ/HC` 不受此规则影响。
+
+- 2026-10-26：space 的 `亏舱费` 也会落统一表整数列 `dead_freight`。不能保存 `100USD/200USD` 这类带单位文本；校验必须覆盖 space 的该字段，历史过期 passed 行在批量放行时要转 failed 并跳过所属组，不能让 PostgreSQL 类型错误变成整批 500。
+
+- 2026-10-26：新群接入不能把 C/D 等新规范只写进配置就复用旧 8797 进程。`spec_index` 有进程内缓存，必须重启服务加载新群规范；否则批次会在 fanout 报“群规范未定位”。同时 DWS 的 `--direction newer` 包含水位边界消息，基线必须把该消息 ID 加入既有 committed index，或者依赖已存在同源 child trigger，否则首轮会重复处理接入前最后一条。
+
+- 2026-10-26：批次 `production-batch` 失败不能走消息级 `deliver_partial`。Worker 只有对 `production-message` 才允许生成部分待审；父批次应保留 reconcile/watermark 阻塞和真实失败，不得用“部分交付只适用于单消息轮次”覆盖原始原因。
+
+- 2026-10-26：space 的 `亏舱费` 也会落统一表整数列 `dead_freight`。不能保存 `100USD/200USD` 这类带单位文本；校验必须覆盖 space 的该字段，历史过期 passed 行在批量放行时要转 failed 并跳过所属组，不能让 PostgreSQL 类型错误变成整批 500。
 

@@ -20,10 +20,11 @@ const S = {
   sales:{tab:'group',sorts:{rates:null,space:null},polTags:[],podTags:[],carrier:'',queried:false,page:1,groupScope:null,groupJumpName:null},
   profile:{preferences:{routes:['Route A'],groups:['Group A']}},useDefaults:true,
 };
-const context = vm.createContext({S,$:element,URLSearchParams,JSON,
+const context = vm.createContext({S,SALES_PORT_FILTER_MAX:3,SALES_HIDDEN_TABS:new Set(['space','dyn']),$:element,URLSearchParams,JSON,
   postJSON:async (path,body)=>{recorded.push([path,body]);return {ok:true,data:{click_count:1}};},
   document:{querySelector(selector){return {dataset:{tab:selector.includes('space')?'space':'rates'}};},querySelectorAll(){return [];}},
   renderPersonalScope(){},acSource(){return [];},foldKey:String,toast(){},commitAllTags(){},startCompanyLookups(){},resetRealtimeEtd(){},
+  canManageSourceGroups(){return true;},
   setCatTab(button){visits.push([button.dataset.tab,context.salesRequestParams()]);},salesLoad(){},
 });
 for (const name of ['salesQueryParams','salesRequestParams','salesExactFilters','jumpGroup','salesSearch','resetPersonalQuery','recordSourceGroupOpen','renderGroupCards']) {
@@ -31,8 +32,8 @@ for (const name of ['salesQueryParams','salesRequestParams','salesExactFilters',
 }
 const scope = Array.from(context.salesRequestParams().entries()).filter(([key]) => key.startsWith('display_'));
 const specialName = `East's "test" <group>`;
-context.jumpGroup(specialName,'space',scope);
-assert.equal(visits.at(-1)[0],'space');
+context.jumpGroup(specialName,'rates',scope);
+assert.equal(visits.at(-1)[0],'rates');
 assert.equal(visits.at(-1)[1].get('group'),specialName);
 assert.deepEqual(JSON.parse(visits.at(-1)[1].get('display_routes')),['Route A']);
 assert.deepEqual(JSON.parse(visits.at(-1)[1].get('display_groups')),['Group A']);

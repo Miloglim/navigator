@@ -2,8 +2,9 @@
 """db_client.py — 运价心跳对「运价台账」(freight_manual.db / manual_server.py) 的唯一对接层。
 
 对齐 docs/agent-input-contract.md：
-  · 写：只 POST /api/pending（进待审核，人工放行才落业务表）。绝不碰 /api/push、/api/record/*、/api/master/save。
-  · 预校验：POST /api/validate（公开只读、不写库），传前跑一次，拿每条 {ok, resolved, errors}。
+  · 报价写：只 POST /api/pending（进待审核，人工放行才落业务表）；解析阻塞写 /api/review-issues。
+    绝不碰 /api/push、/api/record/*、/api/master/save。
+  · 预校验：POST /api/validate（采集凭据鉴权、只读不写库），传前跑一次，拿每条 {ok, resolved, errors}。
   · 主数据：GET /api/master?full=1，港口/船司/航线/港群合法值以它为准（skill 不自拼第二套归一）。
 
 manual_server 是本机 HTTP（默认 127.0.0.1:8795），python urllib 可直连，无需像 dws 那样由宿主逐条跑。
@@ -65,18 +66,54 @@ def _request(method, path, body=None, token=True, timeout=120):
 
 def master(full=True):
     """港口/船司/航线/港群主数据。归一以它为准，skill 不再自拼映射。"""
-    return _request("GET", "/api/master" + ("?full=1" if full else ""), token=False)
+    return _request("GET", "/api/master" + ("?full=1" if full else ""))
 
 
 def validate(kind, records):
     """服务端权威预校验（不写库）。返回 {ok, results:[{ok,resolved,errors}, ...]} 或结构化错误。"""
-    return _request("POST", "/api/validate", {"table": kind, "records": records}, token=False)
+    return _request("POST", "/api/validate", {"table": kind, "records": records})
+
+
+def resolve_names(source_group, items):
+    """Read-only unified name resolution; never creates master rows."""
+    return _request("POST", "/api/master/resolve", {"source_group": source_group, "items": items})
 
 
 def submit(kind, records):
     """唯一写入口：POST /api/pending，进待审核。返回 {ok, staged, ids}。"""
     return _request("POST", "/api/pending",
                     {"table": kind, "origin": origin(), "records": records}, token=True)
+
+
+def submit_missing(kind, records):
+    """同一来源修复后的补行入口：保留已有行及审计，只新增缺失产品。"""
+    return _request("POST", "/api/pending", {
+        "table": kind,
+        "origin": origin(),
+        "records": records,
+        "preserve_other_sources": True,
+        "preserve_existing_source_rows": True,
+    }, token=True)
+
+
+REVIEW_ISSUES_PATH = "/api/review-issues"
+REVIEW_ISSUES_BATCH_LIMIT = 200
+
+
+def report_review_issues(issues):
+    """Persist source-level parsing blockers for operator review."""
+    return _request("POST", REVIEW_ISSUES_PATH, {"issues": issues}, token=True)
+
+
+def settle_review_issue(source_group, message_id, pending_ids):
+    return _request("POST", "/api/agent/review-issues/settle", {
+        "source_group": source_group, "message_id": message_id,
+        "pending_ids": pending_ids, "expected_count": len(pending_ids)}, token=True)
+
+
+def dismiss_review_issue(source_group, message_id):
+    return _request("POST", "/api/agent/review-issues/noise", {
+        "source_group": source_group, "message_id": message_id}, token=True)
 
 
 def chunks(records):
@@ -96,3 +133,17 @@ if __name__ == "__main__":  # 冒烟：python db_client.py 打一发主数据 + 
                                 "有效期起": "2026-09-10", "有效期止": "2026-09-16",
                                 "消息原文": "db_client smoke", "消息时间": "2026-09-10 10:00"}])
     print("validate:", json.dumps(probe, ensure_ascii=False)[:300])
+
+
+MASTER_ENSURE_PATH = "/api/agent/master/ensure"
+PENDING_REPAIR_PATH = "/api/agent/pending/repair"
+
+
+def ensure_master(body):
+    """Evidence-backed additive port/scoped-alias repair; cannot overwrite masters."""
+    return _request("POST", MASTER_ENSURE_PATH, body)
+
+
+def repair_pending(body):
+    """Repair an unreviewed Agent row without changing source or review decisions."""
+    return _request("POST", PENDING_REPAIR_PATH, body)

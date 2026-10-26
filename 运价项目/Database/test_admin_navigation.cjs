@@ -42,9 +42,9 @@ async function run(){
     assert.match(source,/cell_edited:'编辑报价字段'/);
     assert.match(indexHtml,/\/api\/activity\/quote-usage/);
     assert.match(indexHtml,/Telemetry must never interrupt local quotation editing/);
-    assert.match(indexHtml,/\(\(t === 'system' \|\| t === 'publishers'\) && S\.auth\.role !== 'admin'\)/);
-    assert.match(indexHtml,/const allowedTabs = \['profile', \.\.\.\(S\.auth\?\.role === 'admin' \? \['system', 'publishers'\] : \[\]\)\]/);
-    assert.match(indexHtml,/async function loadPublisherAccounts\(\) \{\s+if \(S\.auth\?\.role !== 'admin'\) return;/);
+    assert.match(indexHtml,/\(\(t === 'system' \|\| t === 'publishers'\) && !isAdminRole\(\)\)/);
+    assert.match(indexHtml,/const allowedTabs = \['profile', \.\.\.\(isAdminRole\(\) \? \['system', 'publishers'\] : \[\]\)\]/);
+    assert.match(indexHtml,/async function loadPublisherAccounts\(\) \{\s+if \(!isAdminRole\(\)\) return;/);
   }
   {
     const f=fixture();const loading=f.h.navigate('runtime');

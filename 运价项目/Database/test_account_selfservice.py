@@ -104,6 +104,41 @@ def verify_selfservice(case, connect):
 
 
 class SelfServiceTests(unittest.TestCase):
+    def test_center_initial_password_creates_limited_session_without_product_lookup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            connect=lambda:manualdb.connect(Path(directory)/'center-first-login.db')
+            center_login={
+                "token":"center-token", "refresh_token":"center-refresh",
+                "identity":{"displayName":"Jade", "mustChangePassword":True},
+            }
+            with patch.object(server,'conn',side_effect=connect), \
+                    patch.dict(server.CFG,{'center_auth_url':'http://center'}), \
+                    patch.object(server.center_auth,'login_persistent',return_value=center_login), \
+                    patch.object(server.center_auth,'validate',side_effect=AssertionError('product lookup must wait')), \
+                    patch.object(server.account_growth,'sync_center',side_effect=AssertionError('growth sync must wait')):
+                result,sid,refresh=server.auth_login({'name':'first@example.invalid','password':'Abc123'},'127.0.0.1')
+            connection=connect()
+            try:
+                security=connection.execute(
+                    "SELECT must_change_password FROM account_security sec "
+                    "JOIN operators o ON o.user_id=sec.user_id WHERE o.name='first@example.invalid'").fetchone()
+            finally:connection.close()
+            self.assertTrue(result['user']['must_change_password'])
+            self.assertEqual(security['must_change_password'],1)
+            self.assertTrue(sid)
+            self.assertEqual(refresh,'center-refresh')
+
+            handler=server.Handler.__new__(server.Handler)
+            handler.headers={"Cookie":f"freight_session={sid}; freight_center_refresh=center-refresh"}
+            handler._pending_auth_headers={}
+            try:
+                with patch.object(server,'conn',side_effect=connect), \
+                        patch.dict(server.CFG,{'center_auth_url':'http://center'}), \
+                        patch.object(server.center_auth,'validate',side_effect=AssertionError('product lookup must wait')):
+                    session=handler._session()
+            finally:server.CENTER_SESSION_TOKENS.pop(sid,None)
+            self.assertTrue(session['must_change_password'])
+
     def test_center_login_auto_provisions_missing_navigator_business_identity(self):
         with tempfile.TemporaryDirectory() as directory:
             connect=lambda:manualdb.connect(Path(directory)/'center-login.db')
@@ -133,7 +168,7 @@ class SelfServiceTests(unittest.TestCase):
             center_login={"token":"center-token","refresh_token":"center-refresh","identity":{"displayName":"Disabled"}}
             center_access={"access":{"role":"sales"}}
             with patch.object(server,'conn',side_effect=connect),patch.dict(server.CFG,{'center_auth_url':'http://center'}),patch.object(server.center_auth,'login_persistent',return_value=center_login),patch.object(server.center_auth,'validate',return_value=center_access):
-                with self.assertRaisesRegex(PermissionError,'本地运价业务身份已停用'):
+                with self.assertRaisesRegex(PermissionError,'Navigator 账号已停用'):
                     server.auth_login({'name':'disabled@example.invalid','password':'Abc123'},'127.0.0.1')
 
     def test_center_registration_creates_center_and_local_sales_identity_atomically(self):

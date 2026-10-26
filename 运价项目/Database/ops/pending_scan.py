@@ -13,17 +13,14 @@
 """
 import argparse
 import json
-import os
 import re
-import sqlite3
 import sys
+from audit_connection import backend, connect
 
 sys.stdout.reconfigure(encoding="utf-8")
-DB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "freight_manual.db")
-
 # 船期行：日期开头 + （航次代号/船名首词 / 舱位状态词）。排除「9.22-9.30」这类区间与「10天/号/点」噪声；
 # 前置 (?<![\d./]) 防止从价格串中间咬一口（如「…1200/20GP」里的「00/20」）
-SAIL = re.compile(r"(?<![\d./])\d{1,2}[./]\d{1,2}\s*(?![天日号点分秒])[\u4e00-\u9fa5]{0,3}[A-Z][A-Za-z0-9]{1,}"
+SAIL = re.compile(r"(?<![\d./])\d{1,2}[./]\d{1,2}\s*(?![\u8d77\u540e])(?!(?:USD|RMB|CNY))(?![天日号点分秒])[\u4e00-\u9fa5]{0,3}[A-Z][A-Za-z0-9]{1,}"
                   r"|(?<![\d./])\d{1,2}[./]\d{1,2}\s*(空班|售罄|加班|跳港|现舱|放舱|开舱|撤载)")
 
 
@@ -135,8 +132,8 @@ def main():
     ap.add_argument("--a", action="store_true", help="只跑扫描 A")
     ap.add_argument("--b", action="store_true", help="只跑扫描 B")
     args = ap.parse_args()
-    conn = sqlite3.connect(DB)
-    conn.row_factory = sqlite3.Row
+    engine = backend()
+    conn = connect(engine)
     try:
         both = not (args.a or args.b)
         if both or args.a:

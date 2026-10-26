@@ -11,6 +11,7 @@ from threading import Lock
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from core.contracts import SALES_PORT_FILTER_MAX
 from core.company_rates_contracts import (
     COMPANY_GATEWAY_URL,
     COMPANY_RATE_CACHE_SECONDS,
@@ -240,6 +241,14 @@ class CompanyRateRuntime:
             raise ValueError("起运港和目的港不能为空")
         if not isinstance(carriers, list):
             raise ValueError("船司列表格式不正确")
+        if any(not isinstance(value, str) for value in [*pol, *pod]):
+            raise ValueError("港口格式不正确")
+        pol = list(dict.fromkeys(value.strip() for value in pol if value.strip()))
+        pod = list(dict.fromkeys(value.strip() for value in pod if value.strip()))
+        if not pol or not pod:
+            raise ValueError("起运港和目的港不能为空")
+        if len(pol) > SALES_PORT_FILTER_MAX or len(pod) > SALES_PORT_FILTER_MAX:
+            raise ValueError(f"起运港和目的港分别最多选择 {SALES_PORT_FILTER_MAX} 个")
         if len(pol) * len(pod) > COMPANY_RATE_MAX_PORT_PAIRS:
             raise ValueError("一次最多20个港口组合")
         now_epoch = self.now()

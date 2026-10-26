@@ -96,23 +96,27 @@ def select_exact_port(keyword, candidates, codes=(), country="", identities=()):
     wanted = _identity(keyword)
     if not wanted:
         raise ValueError("港口名称不能为空")
-    if identities:
-        names = {_identity(value) for value in identities if value}
-        candidates = [row for row in candidates if isinstance(row, dict) and names.intersection(
-            _identity(row.get(key)) for key in ('enName', 'name', 'cnName'))]
-    if codes:
-        code_matches = [row for row in candidates if isinstance(row, dict) and row.get("type") == 11
-                        and _identity(row.get("code")) in {_identity(code) for code in codes}]
-        if code_matches:
-            candidates = code_matches
+    candidates = [row for row in candidates if isinstance(row, dict) and row.get("type") == 11
+                  and row.get("id") is not None]
     if country:
         # UN/LOCODE carries country identity. Unknown country is not evidence of a match.
-        candidates = [row for row in candidates if isinstance(row, dict) and (
+        candidates = [row for row in candidates if (
             str(row.get("code") or "").upper().startswith(country.upper())
             or str(row.get("countryCode") or "").upper() == country.upper())]
-    exact = [row for row in candidates if isinstance(row, dict) and row.get("type") == 11 and wanted in {
+    names = {_identity(value) for value in identities if value}
+    name_matches = [row for row in candidates if names.intersection(
+        _identity(row.get(key)) for key in ('enName', 'name', 'cnName'))]
+    code_values = {_identity(code) for code in codes}
+    code_matches = [row for row in candidates if _identity(row.get("code")) in code_values]
+    if code_matches:
+        # A local code only proves identity when the same company row also matches its name or alias.
+        code_and_name_matches = [row for row in code_matches if row in name_matches]
+        candidates = code_and_name_matches or name_matches
+    elif names:
+        candidates = name_matches
+    exact = [row for row in candidates if wanted in {
         _identity(row.get("code")), _identity(row.get("enName")), _identity(row.get("name")), _identity(row.get("cnName"))
-    } and row.get("id") is not None]
+    }]
     if len(exact) != 1:
         raise ValueError("无法精确匹配港口：" + str(keyword))
     _positive_int(exact[0]["id"], "港口ID")
@@ -178,7 +182,8 @@ def local_mapping_profile(name, kind, rows):
                   if value and not re.fullmatch(r'[A-Za-z]{2}[A-Za-z0-9]{3}',value)] if kind == 'port' else []
     # A caller's code or alias is not independent evidence of the port's identity.
     if row and kind == 'port':
-        identities = [value for value in (row.get('name'),row.get('name_en'),row.get('name_cn')) if value]
+        aliases = [value for value in aliases if not re.fullmatch(r'[A-Za-z]{2}[A-Za-z0-9]{3}', value)]
+        identities = [value for value in (row.get('name'),row.get('name_en'),row.get('name_cn'),name,*aliases) if value]
     return {"variants": list(dict.fromkeys(variants)), "codes": codes, "identities":identities,
             "country": row.get("country") or "", "canonical": row.get(primary) or name}
 

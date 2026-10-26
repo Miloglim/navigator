@@ -59,6 +59,7 @@ def verify_group_gate(test, conn):
     test.assertEqual(db.list_pending(conn, kind="space", check="passed", whole_passed=True)["total"], 0)
     result = db.approve_all_pending(conn, master, reviewed_by="bulk-fixture")
     test.assertEqual(result["approved"], len(good), result)
+    test.assertEqual(result["approved_groups"], 4, result)
     test.assertEqual(result["held_by_group"], len(held))
     test.assertEqual(result["remaining_passed"], 0)
     for pid in held:
@@ -88,6 +89,28 @@ def verify_atomic_recheck(test, conn):
     test.assertEqual(released, {conn.execute("SELECT entry_id FROM pending_records WHERE id=?", (fresh,)).fetchone()[0]})
 
 
+def verify_stale_noninteger_field_skips_group(test, conn):
+    seed(conn)
+    db.invalidate_master()
+    master = db.get_master(conn)
+    first = stage(conn, master, "stale-integer", kind="space")
+    second = stage(conn, master, "stale-integer", ctype="40HQ/HC", kind="space")
+    payload = json.loads(conn.execute("SELECT payload FROM pending_records WHERE id=?", (first,)).fetchone()[0])
+    payload["亏舱费"] = "200USD"
+    conn.execute("UPDATE pending_records SET payload=? WHERE id=?", (json.dumps(payload, ensure_ascii=False), first))
+    conn.commit()
+
+    result = db.approve_all_pending(conn, master, reviewed_by="bulk-fixture")
+
+    test.assertTrue(result["ok"], result)
+    test.assertEqual(result["approved"], 0)
+    test.assertEqual({row["id"] for row in result["skipped"]}, {first, second})
+    test.assertEqual(conn.execute("SELECT check_status FROM pending_records WHERE id=?", (first,)).fetchone()[0], "failed")
+    errors = json.loads(conn.execute("SELECT errors FROM pending_records WHERE id=?", (first,)).fetchone()[0])
+    test.assertTrue(any(error.get("field") == "亏舱费" for error in errors), errors)
+    test.assertEqual(conn.execute("SELECT COUNT(*) FROM freight_items").fetchone()[0], 0)
+
+
 def verify_ownership_gate(test, conn):
     seed(conn)
     for name in ("Alice", "Bob"):
@@ -103,6 +126,53 @@ def verify_ownership_gate(test, conn):
     test.assertEqual(result["held_by_group"], 1)
     test.assertEqual(conn.execute("SELECT review_status FROM pending_records WHERE id=?", (own,)).fetchone()[0], "awaiting")
     test.assertEqual(db.approve_all_pending(conn, master)["approved"], 2)
+
+
+def verify_partial_group_is_not_bulk_approved(test, conn):
+    seed(conn)
+    db.invalidate_master()
+    master = db.get_master(conn)
+    partial = stage(conn, master, "partial-source")
+    partial_failed = stage(conn, master, "partial-source", "40HQ/HC", bad=True)
+    normal = stage(conn, master, "normal-source")
+    for pid in (partial, partial_failed):
+        payload = json.loads(conn.execute("SELECT payload FROM pending_records WHERE id=?", (pid,)).fetchone()[0])
+        payload.update({"message_partial_review": True, "message_partial_stage": "coverage",
+                        "message_partial_reasons": ["覆盖未闭合"]})
+        conn.execute("UPDATE pending_records SET payload=? WHERE id=?", (json.dumps(payload, ensure_ascii=False), pid))
+    conn.commit()
+    result = db.approve_all_pending(conn, master, reviewed_by="bulk-fixture")
+    test.assertEqual(result["approved"], 1)
+    test.assertEqual(conn.execute("SELECT review_status FROM pending_records WHERE id=?", (partial,)).fetchone()[0], "awaiting")
+    test.assertEqual(conn.execute("SELECT review_status FROM pending_records WHERE id=?", (partial_failed,)).fetchone()[0], "awaiting")
+    test.assertEqual(conn.execute("SELECT review_status FROM pending_records WHERE id=?", (normal,)).fetchone()[0], "approved")
+    test.assertEqual(result["held_by_group"], 1)
+    individual = db.approve_pending_ids(conn, master, [partial], kind="rates", reviewed_by="passed-only-review")
+    test.assertTrue(individual["approved"][0]["res"]["ok"], individual)
+    test.assertEqual(conn.execute("SELECT review_status FROM pending_records WHERE id=?", (partial,)).fetchone()[0], "approved")
+    test.assertEqual(conn.execute("SELECT review_status FROM pending_records WHERE id=?", (partial_failed,)).fetchone()[0], "awaiting")
+
+
+def verify_passed_partial_groups_are_released(test, conn):
+    seed(conn)
+    db.invalidate_master()
+    master = db.get_master(conn)
+    for index in range(20):
+        message_id = f"partial-prefetch-{index}"
+        first = stage(conn, master, message_id)
+        second = stage(conn, master, message_id, "40HQ/HC")
+        for pid in (first, second):
+            payload = json.loads(conn.execute("SELECT payload FROM pending_records WHERE id=?", (pid,)).fetchone()[0])
+            payload.update({"partial_review": True, "message_partial_review": True})
+            conn.execute("UPDATE pending_records SET payload=? WHERE id=?",
+                         (json.dumps(payload, ensure_ascii=False), pid))
+    conn.commit()
+    with patch.object(db, "_load_pending_source_rows", wraps=db._load_pending_source_rows) as preload:
+        result = db.approve_all_pending(conn, master, reviewed_by="bulk-fixture")
+    preload.assert_called_once()
+    test.assertEqual(result["approved"], 40)
+    test.assertEqual(result["skipped"], [])
+    test.assertEqual(conn.execute("SELECT COUNT(*) FROM freight_items").fetchone()[0], 40)
 
 
 def verify_http_bulk(test, connect):
@@ -139,6 +209,7 @@ def verify_http_bulk(test, connect):
             test.assertEqual(call(path + "&whole_passed=1&ownership=all")["total"], 3)
             result = call("/api/pending/approve_all", {"ownership": "mine"})
             test.assertEqual(result["approved"], 2)
+            test.assertEqual(result["approved_groups"], 1)
             test.assertEqual(result["held_by_group"], 1)
             test.assertEqual(call(path + "&whole_passed=1")["total"], 0)
             test.assertEqual(call(path)["total"], 1)
@@ -164,8 +235,17 @@ class WholeGroupBulkTests(unittest.TestCase):
     def test_stale_check_rolls_back_whole_group(self):
         verify_atomic_recheck(self, self.conn)
 
+    def test_stale_noninteger_field_skips_group(self):
+        verify_stale_noninteger_field_skips_group(self, self.conn)
+
     def test_ownership_does_not_cut_a_group(self):
         verify_ownership_gate(self, self.conn)
+
+    def test_partial_group_requires_individual_confirmation(self):
+        verify_partial_group_is_not_bulk_approved(self, self.conn)
+
+    def test_passed_partial_groups_use_one_prefetch(self):
+        verify_passed_partial_groups_are_released(self, self.conn)
 
     def test_http_count_matches_release(self):
         with tempfile.TemporaryDirectory(prefix="bulk-whole-http-") as directory:

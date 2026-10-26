@@ -42,6 +42,7 @@ def verify_scope(test, conn):
 
 
 def verify_stats(test, conn):
+    conn.execute("INSERT INTO chat_groups(name) VALUES('group')")
     for index,(review,check,edits) in enumerate([
         ('approved','passed',[]),('approved','passed',[{'action':'update','field':'目的港'}]),
         ('awaiting','passed',[]),('rejected','passed',[]),('awaiting','failed',[])]):
@@ -71,7 +72,8 @@ class ReviewMechanismTests(unittest.TestCase):
         self.assertFalse(db.candidates_approve(self.c,cid,'tester')['ok'])
         self.assertEqual(self.c.execute("SELECT target FROM alias_scope WHERE alias='SHORT'").fetchone()[0],'ScopeFixturePortAX')
     def test_no_reviewed_samples_has_no_score(self):
-        self.c.execute("INSERT INTO pending_records(entry_id,kind,payload,review_status,check_status,created_at) VALUES('unreviewed','rates','{}','awaiting','passed','2026-09-29')")
+        self.c.execute("INSERT INTO chat_groups(name) VALUES('group')")
+        self.c.execute("INSERT INTO pending_records(entry_id,kind,payload,review_status,check_status,created_at) VALUES('unreviewed','rates','{\"来源群\":\"group\"}','awaiting','passed','2026-09-29')")
         self.assertIsNone(db.group_accuracy_stats(self.c)['groups'][0]['clean_rate'])
 
 

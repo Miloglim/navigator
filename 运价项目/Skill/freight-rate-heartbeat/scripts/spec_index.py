@@ -20,6 +20,7 @@ import paths
 REFS = os.path.join(paths.PKG_ROOT, "references")
 GROUP_SPECS = os.path.join(REFS, "群聊规范")
 GLOBAL_RULES_F = os.path.join(REFS, "extraction-rules.md")
+KNOWLEDGE_FILE = "业务知识沉淀.md"
 
 TODO_MARK = ("待补", "待核", "待确认")
 
@@ -66,8 +67,9 @@ def parse_spec(text):
 
 def global_anchors():
     """extraction-rules.md 的顶层条款号（`N. **标题**`）→ 'extraction-rules.md#N'。"""
-    return ["extraction-rules.md#%s" % m.group(1)
-            for m in re.finditer(r"^(\d+)\.\s+\*\*", _read(GLOBAL_RULES_F), re.M)]
+    return sorted({"extraction-rules.md#%s" % m.group(1)
+                   for m in re.finditer(r"^(?:#{1,6}\s+)?(\d+)\.\s+(?:\*\*|\S)",
+                                        _read(GLOBAL_RULES_F), re.M)})
 
 
 def _groups():
@@ -108,10 +110,35 @@ def index(refresh=False):
             src = "header" if path else ("ambiguous" if dirs else "missing")
         rec = {"slug": slug, "group": g.get("name", ""), "path": path, "route": src,
                "config_dir": rel, "exists": bool(path) and os.path.isfile(path),
-               "headers": [], "abbrev": [], "todo": [], "anchors": []}
+               "base_path": "", "headers": [], "abbrev": [], "todo": [], "anchors": []}
+        # 共享基础：spec_base 指向的规范.md 与本群差异合并（基础在前、本群在后），
+        # 这样 rule_basis 能引用共享小节、缩写表/待补也自动带上公共项。
+        base_rel = g.get("spec_base") or ""
+        base_path = os.path.join(paths.PKG_ROOT, base_rel.replace("/", os.sep), "规范.md") if base_rel else ""
+        if base_path and os.path.isfile(base_path):
+            rec["base_path"] = base_path
+            bp = parse_spec(_read(base_path))
+            rec["headers"] = bp["headers"] + rec["headers"]
+            rec["abbrev"] = bp["abbrev"] + rec["abbrev"]
+            rec["todo"] = bp["todo"] + rec["todo"]
         if rec["exists"]:
-            rec.update(parse_spec(_read(path)))
+            own = parse_spec(_read(path))
+            rec["headers"] = rec["headers"] + own["headers"]
+            rec["abbrev"] = rec["abbrev"] + own["abbrev"]
+            rec["todo"] = rec["todo"] + own["todo"]
             rec["anchors"] = ["规范.md#%s" % h for h in rec["headers"]]
+        elif rec["base_path"]:
+            # 本群差异文件缺失但共享基础在：仍用基础锚点，路由标 base_only 供冒烟发现
+            rec["route"] = "base_only"
+            rec["anchors"] = ["规范.md#%s" % h for h in rec["headers"]]
+        knowledge_path = os.path.join(os.path.dirname(path), KNOWLEDGE_FILE) if path else ""
+        rec["knowledge_path"] = knowledge_path if os.path.isfile(knowledge_path) else ""
+        rec["knowledge_headers"] = []
+        if rec["knowledge_path"]:
+            knowledge = parse_spec(_read(rec["knowledge_path"]))
+            rec["knowledge_headers"] = knowledge["headers"]
+            rec["todo"].extend(knowledge["todo"])
+            rec["anchors"].extend(KNOWLEDGE_FILE + "#" + h for h in knowledge["headers"])
         out[slug] = rec
     _by_slug = out
     return out
@@ -123,9 +150,11 @@ def spec_for(slug):
 
 
 def brief(slug):
-    """塞进 llm_queue 队列项的最小信息：路径 + 待补条数 + 缩写条数。"""
+    """塞进 llm_queue 队列项的最小信息：路径 + 共享基础路径 + 待补条数 + 缩写条数。"""
     s = spec_for(slug)
     return {"spec_path": s["path"] or "", "spec_route": s["route"],
+            "spec_base_path": s.get("base_path") or "",
+            "spec_knowledge_path": s.get("knowledge_path") or "",
             "spec_abbrev_n": len(s["abbrev"]), "spec_todo": s["todo"]}
 
 
@@ -145,6 +174,8 @@ def resolve_basis(slug, basis):
         return False, "全局条款号不存在：%s（现有 1…%d）" % (b, len(anchors))
     if not s["exists"]:
         return False, "该群规范未定位（slug=%s），无法校验依据：%s" % (slug, b)
+    if file_part == KNOWLEDGE_FILE:
+        return (True, "") if frag in s.get("knowledge_headers", []) else (False, "本群业务知识无该小节：%s" % b)
     if not file_part or file_part in ("规范.md", "rules.md", "memory.md"):
         heads = {h for h in s["headers"]}
         return (True, "") if frag in heads else (False, "本群规范无该小节：%s（可用：%s）" % (b, "、".join(sorted(heads))[:70]))

@@ -16,7 +16,8 @@ CONFIG_DIR = os.path.join(HERE, "config")
 CONTRACT_F = os.path.join(CONFIG_DIR, "ledger_contract.json")
 CHAT_SOURCES_F = os.path.join(CONFIG_DIR, "chat_sources.json")
 
-CONTRACT = json.load(open(CONTRACT_F, encoding="utf-8"))
+with open(CONTRACT_F, encoding="utf-8") as _contract_stream:
+    CONTRACT = json.load(_contract_stream)
 _db = CONTRACT.get("db_conn", {})
 
 
@@ -43,8 +44,23 @@ def resolve(p):
 RUNTIME_DIR = (os.environ.get("FRT_RUNTIME_DIR") or resolve(CONTRACT.get("runtime_dir"))
                or os.path.join(os.path.dirname(PKG_ROOT), "heartbeat-data"))
 WORK = os.path.join(RUNTIME_DIR, ".work")            # 每轮 run_<D>/msgs_<D>/draft_<D>/llm_out_<D> 的父目录
-OCR_CACHE = os.path.join(WORK, "ocr_cache")           # 识图缓存（跨群复用），mediaId 为键
+OCR_CACHE = os.path.join(WORK, "ocr_cache")           # 识图缓存（跨群复用，与分片无关，全局共享），mediaId 为键
 WATERMARK_F = os.path.join(RUNTIME_DIR, "watermark.json")
+
+# 分片：把群拆成 A/B/C/D 四个大组错峰运行，缩短单次识别时间。
+# 由环境变量 FRT_SHARD 决定（pipeline 命令行 --shard 会先写入 os.environ 再 fork 子进程，子进程自动继承）。
+# 空 = 不分片（全部群，沿用旧目录名）；A-D = 只跑该 shard 的群，中间产物目录带分片后缀避免互相覆盖。
+SHARD = (os.environ.get("FRT_SHARD") or "").strip().upper()
+
+# 单群手动模式：FRT_ONLY 指定某个群 slug（如 turkey_price）→ 只跑该群，且中间目录带 _<slug> 后缀，
+# 群与群之间完全隔离，供人工"以单群为单位逐个拉群"用。与 SHARD 可叠加（一般手动模式不带 shard）。
+ONLY = (os.environ.get("FRT_ONLY") or "").strip().lower()
+
+
+def sfx():
+    """目录后缀：分片在前、单群在后。都不设返回空串（沿用旧无后缀目录，向后兼容）。"""
+    parts = [x for x in (SHARD, ONLY) if x]
+    return ("_" + "_".join(parts)) if parts else ""
 
 
 def ensure(path):
@@ -54,8 +70,16 @@ def ensure(path):
 
 
 def chat_groups():
-    """要爬取的钉钉群清单（config/chat_sources.json 的 groups 数组）。"""
-    return json.load(open(CHAT_SOURCES_F, encoding="utf-8"))["groups"]
+    """要爬取的钉钉群清单（config/chat_sources.json 的 groups 数组）。
+
+    分片感知：设了 FRT_SHARD 时只返回该 shard 的群（群的 shard 字段 == SHARD），
+    这样 watermark/pipeline/record_builder 共用同一入口就自动各跑各的，不用每处再过滤。
+    未设 SHARD 时返回全部（向后兼容旧的不带 --shard 调用）。"""
+    with open(CHAT_SOURCES_F, encoding="utf-8") as source_stream:
+        gs = json.load(source_stream)["groups"]
+    if not SHARD:
+        return gs
+    return [g for g in gs if str(g.get("shard", "")).strip().upper() == SHARD]
 
 
 if __name__ == "__main__":

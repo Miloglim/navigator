@@ -20,14 +20,17 @@ class AliasPage(TypedDict):
 
 CONTEXT_ALIAS_APPROVAL_NOTE = "仅对本发送人、本船司、本群生效"
 CONTEXT_ALIAS_SCOPE = "sender+carrier+group"
-SUBMISSION_COVERAGE_VERSION = 1
+SUBMISSION_COVERAGE_VERSION = 2
 SUBMISSION_IDENTITY_FIELDS = ('来源群', '消息ID', '发送人', '消息时间', '消息原文', '起运港', '目的港', '船司', '柜型',
     '航线服务', '目的码头', '船期ETD', '有效期起', '有效期止', '船名航次', '舱位类型',
-    '箱量', '目免', '亏舱费', 'T/T航程', '备注')
+    '箱量', '目免', '亏舱费', 'T/T航程', '备注', '币种')
+ROLE_SUPERADMIN = "superadmin"
 ROLE_ADMIN = "admin"
 ROLE_OPERATOR = "operator"
 ROLE_SALES = "sales"
-ACCOUNT_ROLES = frozenset({ROLE_ADMIN, ROLE_OPERATOR, ROLE_SALES})
+ADMIN_ROLES = frozenset({ROLE_SUPERADMIN, ROLE_ADMIN})
+AUTHENTICATED_ROLES = frozenset({ROLE_SUPERADMIN, ROLE_ADMIN, ROLE_OPERATOR, ROLE_SALES})
+ACCOUNT_ROLES = AUTHENTICATED_ROLES
 AUTH_LOGIN_ROUTE = "/api/auth/login"
 AUTH_LOGOUT_ROUTE = "/api/auth/logout"
 AUTH_SETUP_ROUTE = "/api/auth/setup"
@@ -38,6 +41,7 @@ SALES_SCOPED_GET = frozenset({"/api/rates", "/api/space", "/api/rates_grouped", 
 SALES_GROUP_SUMMARY_ROUTE = "/api/sales/groups"
 SALES_GROUP_VISIT_ROUTE = "/api/sales/groups/visit"
 SALES_GROUP_NAME_MAX_LENGTH = 512
+SALES_PORT_FILTER_MAX = 3
 
 class SalesGroupVisitRequest(TypedDict):
     name: str
@@ -165,6 +169,7 @@ PENDING_REJECT_GROUP_ROUTE = "/api/pending/reject_group"
 REVIEW_ISSUES_ROUTE = "/api/review-issues"
 REVIEW_ISSUES_RESOLVE_ROUTE = "/api/review-issues/resolve"
 AGENT_REVIEW_ISSUES_SETTLE_ROUTE = "/api/agent/review-issues/settle"
+AGENT_REVIEW_ISSUES_NOISE_ROUTE = "/api/agent/review-issues/noise"
 
 
 class ReviewIssueSettlement(TypedDict):
@@ -228,6 +233,8 @@ def fail(error: str, code: str) -> Dict[str, Any]:
 
 # Additive sales filters: legacy valid remains a single-day overlap query.
 SALES_VALID_SINCE_PARAM = "valid_since"
+SALES_SEARCH_QUERY_PARAM = "q"
+SALES_GLOBAL_QUERY_PARAM = "global_query"
 PORT_ROUTES_FIELD = "routes_list"
 PORT_ROUTES_COMPACT_FIELD = "rs"
 MASTER_SAVE_ROUTE = "/api/master/save"
@@ -294,7 +301,7 @@ AGENT_MASTER_ENSURE_ROUTE = "/api/agent/master/ensure"
 AGENT_PENDING_REPAIR_ROUTE = "/api/agent/pending/repair"
 AGENT_PENDING_SUPPRESS_ROUTE = "/api/agent/pending/suppress"
 AGENT_PENDING_REPAIR_FIELDS = frozenset({"起运港", "目的港", "船司", "航线", "柜型",
-    "海运费USD", "价格USD", "有效期起", "有效期止", "有效期船期", "目免", "备注",
+    "海运费USD", "价格USD", "币种", "有效期起", "有效期止", "有效期船期", "目免", "备注",
     "航线服务", "目的码头", "船期ETD", "船名航次", "舱位类型", "AI判断"})
 AGENT_MASTER_ENTITIES = frozenset({"port", "alias"})
 

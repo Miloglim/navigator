@@ -373,6 +373,34 @@ class AgentRepairTests(unittest.TestCase):
             finally:
                 conn.close()
                 manualdb.invalidate_master()
+
+    def test_additive_recovery_merges_duplicate_image_rows_with_same_product(self):
+        with tempfile.TemporaryDirectory() as folder:
+            conn = manualdb.connect(Path(folder)/'isolated.db')
+            try:
+                seed(conn)
+                manualdb.invalidate_master()
+                base = dict(quote(), **{
+                    '来源群': GROUP,
+                    '消息ID': 'duplicate-image-rows',
+                    '消息原文': 'same source message',
+                    'partial_review': True,
+                    'message_partial_review': True,
+                })
+                first = dict(base, 备注='[部分解析待核] 覆盖检查失败；来源行=image:1:row:4')
+                duplicate = dict(base, 备注='[部分解析待核] 覆盖检查失败；来源行=image:1:row:5')
+                ids = manualdb.stage_pending(
+                    conn, manualdb.get_master(conn), 'rates', [first, duplicate],
+                    auto_suggest=False, preserve_other_sources=True,
+                    preserve_existing_source_rows=True)
+                self.assertEqual(len(ids), 1)
+                self.assertEqual(conn.execute(
+                    "SELECT count(*) FROM pending_records WHERE json_extract(payload,'$.消息ID')='duplicate-image-rows'"
+                ).fetchone()[0], 1)
+            finally:
+                conn.close()
+                manualdb.invalidate_master()
+
     def test_pending_api_reports_inserted_and_preserved_rows_separately(self):
         import manual_server
         with tempfile.TemporaryDirectory() as folder:

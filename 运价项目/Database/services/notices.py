@@ -8,6 +8,7 @@ from html import escape
 from html.parser import HTMLParser
 from core.notice_contracts import (NOTICE_TITLE_MAX, NOTICE_TAG_MAX, NOTICE_TAG_COUNT_MAX,
     NOTICE_HTML_MAX, NOTICE_IMAGE_MAX, NOTICE_IMAGE_COUNT_MAX, NOTICE_SCOPE_MAX)
+from core.contracts import ADMIN_ROLES
 
 TAGS = frozenset({'p','div','br','strong','b','em','i','u','s','strike','ul','ol','li',
                   'blockquote','h2','h3','pre','span','a','img','font'})
@@ -208,12 +209,12 @@ def notice_form(body, groups, routes=()):
 
 def pin_transition(state, action, role, owner):
     if action in ('approve','reject'):
-        if role != 'admin':
+        if role not in ADMIN_ROLES:
             raise PermissionError('只有管理员可以审核置顶')
         if state != 'pending':
             raise ValueError('该公告没有待审核的置顶申请')
         return 'approved' if action == 'approve' else 'rejected'
-    if not owner and role != 'admin':
+    if not owner and role not in ADMIN_ROLES:
         raise PermissionError('只能修改本人公告的置顶状态')
     if action == 'request':
         return 'pending' if role == 'sales' else 'approved'

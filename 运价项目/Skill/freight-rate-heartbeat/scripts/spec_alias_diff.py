@@ -104,6 +104,10 @@ def broken_links():
     roots = [os.path.dirname(spec_index.GLOBAL_RULES_F), spec_index.REFS, spec_index.GROUP_SPECS,
              P.PKG_ROOT, os.path.join(spec_index.REFS, ".."),
              os.path.join(P.PROJECT_ROOT, "Database", "docs"), os.path.join(P.PROJECT_ROOT, "Database")]
+    if os.path.isdir(spec_index.GROUP_SPECS):
+        roots.extend(os.path.join(spec_index.GROUP_SPECS, d)
+                     for d in os.listdir(spec_index.GROUP_SPECS)
+                     if os.path.isdir(os.path.join(spec_index.GROUP_SPECS, d)))
     for f in [spec_index.GLOBAL_RULES_F] + [os.path.join(spec_index.GROUP_SPECS, d, "规范.md")
                                             for d in (os.listdir(spec_index.GROUP_SPECS)
                                                       if os.path.isdir(spec_index.GROUP_SPECS) else [])]:
@@ -120,9 +124,9 @@ def norm(a):
     return str(a or "").strip().lstrip("+").lower()
 
 
-def diff(db=None):
+def diff(db=None, aliases=None):
     db = db or default_db()
-    alias = read_alias(db)
+    alias = read_alias(db) if aliases is None else aliases
     rows = spec_rows()
     out = {"db": db, "db_found": alias is not None, "n_spec_rows": len(rows),
            "n_alias_rows": len(alias or {}), "only_in_spec": [], "only_in_db": [],

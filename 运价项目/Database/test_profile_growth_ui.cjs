@@ -1,5 +1,6 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
+const vm=require('node:vm');
 const html=fs.readFileSync(__dirname+'/web/index.html','utf8');
 
 assert.doesNotMatch(html,/id="growth-panel"|growth-liquid-toggle|growthLiquidChanged|profile-avatar-edit/);
@@ -42,12 +43,22 @@ assert.match(html,/profile-growth-caption \{[^}]*font-size:11px[^}]*line-height:
 assert.match(html,/growth_liquid_enabled:true/);
 assert.match(html,/id="growth-feedback"[^>]+onclick="switchRole\('account'\)"/);
 assert.match(html,/function showGrowthFeedback\(award,label\)/);
+assert.match(html,/if \(!data\.summary \|\| !Number\.isFinite\(Number\(data\.summary\.total_xp\)\)\)/);
+assert.match(html,/等级信息暂不可用，不影响账号资料保存/);
 assert.match(html,/award\.level_up\?'等级提升至 '/);
 assert.match(html,/今日 '\+award\.today_xp\+' \/ '\+award\.daily_cap\+' XP/);
 assert.match(html,/showGrowthFeedback\(d\.data\.growth_award,'有效查询'\)/);
 assert.match(html,/showGrowthFeedback\(r\.growth_award,'审核贡献'\)/);
 assert.match(html,/showGrowthFeedback\(r\.growth_award,'候选治理'\)/);
 assert.match(html,/@media\(prefers-reduced-motion:reduce\)/);
+
+const growthStart=html.indexOf('function renderGrowth()');
+const growthEnd=html.indexOf('\nasync function loadGrowth()',growthStart);
+assert.ok(growthStart>=0&&growthEnd>growthStart,'renderGrowth source missing');
+const panel={innerHTML:''};
+const context={S:{growth:{summary:null}},$:id=>id==='profile-growth-compact'?panel:null};
+vm.runInNewContext(html.slice(growthStart,growthEnd)+'\nrenderGrowth();',context);
+assert.match(panel.innerHTML,/等级信息暂不可用，不影响账号资料保存/);
 
 console.log('PASS: compact account growth and verified XP feedback');
 

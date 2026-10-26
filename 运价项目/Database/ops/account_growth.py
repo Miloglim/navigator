@@ -88,6 +88,56 @@ def _record(connection, user_id, event_type, subject_key, points, stamp, daily_c
             "points": granted if inserted.rowcount == 1 else 0}
 
 
+def _record_many_uncapped(connection, user_id, event_type, subjects, stamp):
+    """Batch append uncapped review facts without changing their idempotency or center outbox."""
+    points_by_subject = {}
+    for subject_key, points in subjects:
+        key = str(subject_key or "")
+        if key and int(points) > 0 and key not in points_by_subject:
+            points_by_subject[key] = int(points)
+    if not points_by_subject:
+        return 0
+    existing = set()
+    keys = list(points_by_subject)
+    for start in range(0, len(keys), 400):
+        chunk = keys[start:start + 400]
+        placeholders = ",".join("?" for _ in chunk)
+        existing.update(row[0] for row in connection.execute(
+            "SELECT subject_key FROM account_experience_events "
+            "WHERE user_id=? AND event_type=? AND subject_key IN (" + placeholders + ")",
+            [user_id, event_type, *chunk]))
+    pending = [(key, points_by_subject[key]) for key in keys if key not in existing]
+    awarded = 0
+    for start in range(0, len(pending), 100):
+        chunk = pending[start:start + 100]
+        event_rows = []
+        values = []
+        for subject_key, points in chunk:
+            event_id = "xp_" + uuid.uuid4().hex
+            event_rows.append((event_id, user_id, stamp))
+            values.extend([event_id, user_id, event_type, subject_key, points,
+                           GROWTH_RULE_VERSION, stamp])
+        row_sql = "(?,?,?,?,?,?,?)"
+        inserted = connection.execute(
+            "INSERT INTO account_experience_events(event_id,user_id,event_type,subject_key,points,rule_version,created_at) "
+            "VALUES " + ",".join(row_sql for _ in chunk) +
+            " ON CONFLICT(user_id,event_type,subject_key) DO NOTHING",
+            values)
+        inserted_points = sum(points for _, points in chunk)
+        awarded += (inserted_points if inserted.rowcount == len(chunk) else
+                    int(inserted.rowcount or 0) * int(chunk[0][1]))
+        if inserted.rowcount and event_type in CENTER_GROWTH_EVENTS:
+            oid_placeholders = ",".join("(?,?,'pending',0,?)" for _ in event_rows)
+            outbox_values = []
+            for event_id, owner_id, created_at in event_rows:
+                outbox_values.extend([event_id, owner_id, created_at])
+            connection.execute(
+                f"INSERT INTO {GROWTH_SYNC_TABLE}(event_id,user_id,status,attempts,created_at) "
+                "VALUES " + oid_placeholders + " ON CONFLICT(event_id) DO NOTHING",
+                outbox_values)
+    return awarded
+
+
 def award_business_activity(connection, user_id, activity_event, subjects=(), now=None, activity_daily_cap=GROWTH_DAILY_CAP):
     """Record verified server-side work without letting XP failure alter business data."""
     stamp = now or datetime.now(BUSINESS_TIMEZONE).isoformat(timespec="seconds")
@@ -100,9 +150,15 @@ def award_business_activity(connection, user_id, activity_event, subjects=(), no
     result = _record(connection, user_id, activity_event, day,
                      GROWTH_DAILY_ACTIVITY_POINTS, stamp, activity_daily_cap)
     awarded = result["points"]
+    uncapped = {}
     for event_type, subject_key, points in subjects:
         cap = None if event_type in (GROWTH_APPROVAL_EVENT, GROWTH_CORRECTION_EVENT) else GROWTH_DAILY_CAP
-        awarded += _record(connection, user_id, event_type, str(subject_key), points, stamp, cap)["points"]
+        if cap is None:
+            uncapped.setdefault(event_type, []).append((subject_key, points))
+        else:
+            awarded += _record(connection, user_id, event_type, str(subject_key), points, stamp, cap)["points"]
+    for event_type, items in uncapped.items():
+        awarded += _record_many_uncapped(connection, user_id, event_type, items, stamp)
     connection.commit()
     state = _read(connection, user_id, day, 1, 0)
     return award_feedback(state["summary"], awarded, state["today_xp"],

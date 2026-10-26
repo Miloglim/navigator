@@ -4,7 +4,7 @@ import time
 import uuid
 from datetime import date, datetime, timedelta
 from core.admin_contracts import ADMIN_PAGE_SIZE, ADMIN_PAGE_LIMIT, ADMIN_SERVER_FIELDS, ADMIN_LOGIN_FAILURE_WINDOW_SECONDS
-from core.contracts import ok
+from core.contracts import ACCOUNT_ROLES, ADMIN_ROLES, ROLE_SUPERADMIN, ok
 from services.admin_accounts import profile_fields, signature, login_state, security_request
 
 PUBLIC_COLUMNS = "user_id,name,publisher_id,publisher_name,display_name,role,active,created_at,password_changed_at,CASE WHEN password_hash IS NOT NULL AND password_hash<>'' THEN 1 ELSE 0 END AS has_password"
@@ -73,13 +73,13 @@ def list_accounts(conn, query, people):
                'recovery_requested':len(recovery)}
     search = str(query.get('q') or '').strip().casefold()
     role,status = query.get('role'),query.get('status')
-    if role and role not in ('admin','operator','sales'):
+    if role and role not in ACCOUNT_ROLES:
         raise ValueError('角色筛选无效')
     if status and status not in ('enabled','unopened','disabled','recovery'):
         raise ValueError('登录状态筛选无效')
     rows = [r for r in rows if (not search or search in (' '.join([r['name'],r.get('publisher_name') or '',r['display_name'],r['profile'].get('employee_no','')])).casefold())
             and (not role or r['role']==role) and (not status or (r['recovery_requested'] if status=='recovery' else r['login_status']==status))]
-    order = ('admin','operator','sales')
+    order = ('superadmin','admin','operator','sales')
     rows.sort(key=lambda r:(order.index(r['role']),r['name']))
     limit,offset = _page(query)
     return ok({'rows':rows[offset:offset+limit],'total':len(rows),'summary':summary,'limit':limit,'offset':offset})
@@ -114,7 +114,7 @@ def detail(conn, user_id, people):
                     'routes_list':route_rows.get('routes_list',[]),'last_login':last,'sessions':sessions,'recent_login_failures':failures,
                     'business':{'published':published,'awaiting':state.get('awaiting',0),'approved':state.get('approved',0),'rejected':state.get('rejected',0)},
                     'events':events(conn,{'user_id':user_id})['data'],
-                    'last_admin':account['role']=='admin' and account['login_status']=='enabled' and conn.execute("SELECT COUNT(*) FROM operators WHERE role='admin' AND active=1 AND password_hash IS NOT NULL").fetchone()[0]==1,
+                    'last_admin':account['role'] in ADMIN_ROLES and account['login_status']=='enabled' and conn.execute("SELECT COUNT(*) FROM operators WHERE role IN ('superadmin','admin') AND active=1 AND password_hash IS NOT NULL").fetchone()[0]==1,
                     'ownership_basis':'账号资料与公告按稳定账号编号关联；新报价按钉钉人员 ID 自动关联本人报价身份，跨群发价无需重复关联。修改登录账号、密码或昵称不改变归属。'})
     return ok(account)
 
@@ -147,6 +147,8 @@ def save_section(conn, body, stamp):
     if set(body)-({'user_id','section','fields','expected_signature'} | ADMIN_SERVER_FIELDS):
         raise ValueError('资料请求包含非当前区块字段')
     account,profile,experience,required = _checked(conn,body)
+    if account['role'] == ROLE_SUPERADMIN and body.get('_role') != ROLE_SUPERADMIN:
+        raise PermissionError('仅超级管理员可管理超级管理员账号')
     fields = profile_fields(body.get('section'),body.get('fields'),date.fromisoformat(stamp[:10]))
     before = dict(profile if body['section']=='profile' else experience)
     if 'display_name' in fields:
@@ -171,7 +173,8 @@ def create_account(conn, body, stamp):
         raise ValueError('新账号仅填写登录名、显示名和角色')
     name = account_name(body.get('name'))
     role = body.get('role') or 'sales'
-    if role not in ('admin','operator','sales'):
+    allowed_roles = ACCOUNT_ROLES if body.get('_role') == ROLE_SUPERADMIN else ACCOUNT_ROLES - {ROLE_SUPERADMIN}
+    if role not in allowed_roles:
         raise ValueError('角色无效')
     fields = profile_fields('profile',{'display_name':body.get('display_name') or name},date.fromisoformat(stamp[:10]))
     _lock(conn)
@@ -189,6 +192,8 @@ def security(conn, body, hash_password, stamp):
     action = security_request(body)
     account,profile,experience,required = _checked(conn,body)
     name,user_id = account['name'],account['user_id']
+    if account['role'] == ROLE_SUPERADMIN and body.get('_role') != ROLE_SUPERADMIN:
+        raise PermissionError('仅超级管理员可管理超级管理员账号')
     changes = {'name':name,'_actor':body['_actor'],'_actor_id':body['_actor_id']}
     if action == 'disable':changes['active']=0
     if action in ('activate','enable'):

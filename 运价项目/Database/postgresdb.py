@@ -99,6 +99,7 @@ class Connection:
         from core.activity_contracts import (ACTIVITY_DDL, ACTIVITY_INDEX_COLUMNS, ACTIVITY_TABLE,
                                              QUOTE_USAGE_DDL, QUOTE_USAGE_INDEX_COLUMNS, QUOTE_USAGE_TABLE)
         from core.api_monitor_contracts import API_EVENT_DDL, API_EVENT_INDEX_COLUMNS, API_EVENT_TABLE
+        from core.message_board_contracts import MESSAGE_BOARD_DDL, MESSAGE_BOARD_TABLE
         from core.prospector_contracts import DDL as PROSPECTOR_DDL
         from core.company_rates_contracts import COMPANY_RATE_DDL
         for statement in PROSPECTOR_DDL.values():
@@ -133,6 +134,22 @@ class Connection:
         self._conn.execute(API_EVENT_DDL)
         for column in API_EVENT_INDEX_COLUMNS:
             self._conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{API_EVENT_TABLE}_{column} ON {API_EVENT_TABLE}({column})")
+        from core.contracts import SOURCE_MESSAGE_ID_PREFIX
+        message_id_text = "TRIM(CAST((payload::jsonb)->>'消息ID' AS TEXT))"
+        prefix_length = len(SOURCE_MESSAGE_ID_PREFIX)
+        source_key_sql = (
+            f"COALESCE(NULLIF(RTRIM(CASE WHEN SUBSTR({message_id_text},1,{prefix_length})='{SOURCE_MESSAGE_ID_PREFIX}' "
+            f"THEN SUBSTR({message_id_text},{prefix_length + 1}) ELSE {message_id_text} END,'='),''),'row-'||id::text)"
+        )
+        self._conn.execute(
+            f"CREATE INDEX IF NOT EXISTS idx_pending_records_bulk_source ON pending_records (({source_key_sql})) "
+            "WHERE review_status='awaiting'")
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pending_records_bulk_gate "
+            "ON pending_records(review_status,kind,check_status,id) WHERE review_status='awaiting'")
+        self._conn.execute(MESSAGE_BOARD_DDL)
+        for column in ('created_at', 'user_id'):
+            self._conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{MESSAGE_BOARD_TABLE}_{column} ON {MESSAGE_BOARD_TABLE}({column})")
         from manualdb import DDL
         self._conn.execute(DDL["sales_group_visits"])
         from ops.item_feedback import POSTGRES_DDL, ACTIVE_INDEX, ENTRY_INDEX
@@ -144,6 +161,8 @@ class Connection:
             "ALTER TABLE carriers ADD COLUMN IF NOT EXISTS website_url TEXT",
             "ALTER TABLE freight_items ADD COLUMN IF NOT EXISTS service_name TEXT",
             "ALTER TABLE freight_items ADD COLUMN IF NOT EXISTS destination_terminal TEXT",
+            "ALTER TABLE freight_items ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'USD'",
+            "UPDATE freight_items SET currency='USD' WHERE currency IS NULL OR BTRIM(currency)=''",
             "ALTER TABLE freight_items ADD COLUMN IF NOT EXISTS entry_id TEXT",
             "UPDATE freight_items SET entry_id='frt_' || substr(md5('freight:' || id::text),1,32) WHERE entry_id IS NULL OR entry_id=''",
             "ALTER TABLE freight_items ALTER COLUMN entry_id SET NOT NULL",

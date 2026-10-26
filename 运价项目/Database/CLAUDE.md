@@ -1,6 +1,6 @@
 
 - 公司网关Token身份、钉钉ID与业务header.xUserId不是同一概念。钉钉ID误填xUserId时，普通运价可能仍可读，而实时创建返回success=true/task=[]；不能以普通查价成功认定业务身份正确，也不能把空任务说成无报价。实时查价ETD应单独选择，不能借用报价有效期。
-- 本地locode_ref和别名不是已核实的外部身份。Shanghai历史代码CNSHG实际指向SHANHAIGUAN；自动港口匹配必须独立核对规范港名，不能把查询代码与公司回显代码一致当作匹配成功，错误代码应回退名称查找，仍无法确认则拒绝。
+- 本地locode_ref和别名不是已核实的外部身份。Shanghai历史代码CNSHG实际指向SHANHAIGUAN；自动港口匹配必须用同一候选的公司编号和规范港名或非代码别名共同确权，不能把查询代码与公司回显代码一致当作匹配成功。错误代码应回退名称查找，仍无法确认则拒绝；Sokhna Port已改为规范名Sokhna，旧写法只留别名。
 - 公司业务用户ID可能超过32位整数范围：跨库映射标识使用BIGINT，不能用SQLite测试通过推断PostgreSQL的INTEGER足够。查询签名也须显式按列名取值，PostgreSQL兼容行迭代得到键名而SQLite得到值。
 - 待审API会将分页上限压到500，不能以“返回不足请求limit”推断已读完；必须按total连续读取并拒绝分页总数漂移/重叠，否则整组复核会漏行。主动复核修后内容指纹必须同时结案，否则自己修改产生新版本会被再次领取；所有既有edit_log保护，不能靠passed推断可覆盖。
 - 港群别名写入必须按正式港群名校验：`agent_master_ensure` 不能只调用 `lookup_port`（它只查普通港口/别名），否则 `NEB/ECSA` 会被错误拒绝；港群目标需直接在 `group_by_name` 中校验 kind。

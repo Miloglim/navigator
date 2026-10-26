@@ -6,12 +6,12 @@ from core.company_rates_contracts import (
     COMPANY_REALTIME_QUERY_ROUTE,
     COMPANY_MAPPING_ROUTE, COMPANY_MAPPING_SAVE_ROUTE, COMPANY_MAPPING_PROBE_ROUTE,
 )
-from core.contracts import ok
+from core.contracts import ADMIN_ROLES, ok
 
 
 def build_company_rate_routes(runtime):
     def admin(payload, operation):
-        if payload.get('_role') != 'admin' or not payload.get('_actor_id'):
+        if payload.get('_role') not in ADMIN_ROLES or not payload.get('_actor_id'):
             raise PermissionError('仅管理员可维护公司接口映射')
         return ok(operation())
     def create(kind, body):

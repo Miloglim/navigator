@@ -5,8 +5,10 @@ const {chromium} = require('playwright');
 const source = fs.readFileSync('web/index.html', 'utf8');
 assert.equal((source.match(/data-tab="space" hidden/g) || []).length, 1, 'space tab must stay hidden');
 assert.equal((source.match(/data-tab="dyn" hidden/g) || []).length, 1, 'announcement tab must stay hidden');
+assert.equal((source.match(/data-tab="board" hidden/g) || []).length, 1, 'message board must stay hidden unless dev mode enables it');
 assert(!source.includes("+action('space','舱位',item.space)"), 'source-group cards must not expose the hidden space page');
 assert(source.includes("if (!['rates','space'].includes(kind) || SALES_HIDDEN_TABS.has(kind)) return;"), 'group jumps must reject hidden pages');
+assert(source.includes('onclick="bookmarkCurrentPage()"'), 'sales help footer must expose the bookmark action');
 
 (async () => {
   const browser = await chromium.launch({headless:true, executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});
@@ -16,6 +18,29 @@ assert(source.includes("if (!['rates','space'].includes(kind) || SALES_HIDDEN_TA
       contentType:'text/html',body:fs.readFileSync('web/index.html','utf8')
     }));
     await page.goto('http://127.0.0.1:8795/', {waitUntil:'networkidle'});
+    assert.equal(await page.locator('.bookmark-page').innerText(),'点我一键收藏本网页');
+    const multiPortTags=await page.evaluate(() => {
+      S.sales.polTags=[];
+      S.portIdx=new Map([['shanghai','Shanghai'],['ningbo','Ningbo'],['shenzhen','Shenzhen']]);
+      addTag('pol','Shanghai,Ningbo,Shenzhen');
+      return [...S.sales.polTags];
+    });
+    assert.deepEqual(multiPortTags,['Shanghai','Ningbo','Shenzhen'],'pasting multiple departure ports must create one tag per port');
+    const boardHidden=await page.evaluate(() => {
+      S.features={message_board:false};applyFeatureFlags();
+      const board=document.querySelector('#cat-tabs [data-tab="board"]');
+      setCatTab(board);
+      return {hidden:board.hidden,current:currentCatTab()};
+    });
+    assert.deepEqual(boardHidden,{hidden:true,current:'rates'},'production must not expose or activate the dev message board');
+    const bookmark=await page.evaluate(async () => {
+      window.__bookmarkCopied='';
+      writeClipboardText=async text=>{window.__bookmarkCopied=text;};
+      await bookmarkCurrentPage();
+      return {copied:window.__bookmarkCopied,url:location.href,toast:$('toast').textContent};
+    });
+    assert.equal(bookmark.copied,bookmark.url,'bookmark action must copy the exact current URL');
+    assert.match(bookmark.toast,/收藏本网页/);
     await page.evaluate(() => {
       S.auth={user_id:'tab-fixture',role:'sales',views:['sales']};
       S.role='sales';

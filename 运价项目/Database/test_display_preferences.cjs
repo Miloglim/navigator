@@ -19,7 +19,7 @@ const calls = [];
 const S = {sales:{tab:'rates',sorts:{rates:null,space:null},polTags:[],podTags:[],carrier:'',queried:false,page:1},
   profile:{preferences:{routes:['Route A'],groups:['Group A']}},useDefaults:true,
   auth:{user_id:'fixture',role:'sales'},role:'sales'};
-const ctx = vm.createContext({S,$:el,URLSearchParams,JSON,document:{querySelectorAll(){return [];},body:{classList:{toggle(){}}}},
+const ctx = vm.createContext({S,SALES_PORT_FILTER_MAX:3,$:el,URLSearchParams,JSON,document:{querySelectorAll(){return [];},body:{classList:{toggle(){}}}},
   esc:String,renderPersonalScope(){},salesExactFilters(){return true;},commitAllTags(){},startCompanyLookups(){},resetRealtimeEtd(){},salesLoad(){calls.push('salesLoad');}});
 for (const name of ['salesQueryParams','salesRequestParams','resetPersonalQuery','salesSearch','clearSalesSearch']) vm.runInContext(source(sales,name),ctx);
 let params = ctx.salesRequestParams();
@@ -44,7 +44,7 @@ const ne = id => {
   if (!noticeElements.has(id)) noticeElements.set(id, {value:'',innerHTML:'',querySelector(){return null;},querySelectorAll(){return [];}});
   return noticeElements.get(id);
 };
-const nc = vm.createContext({S,NOTICE_UI:noticesUi,NOTICE_UI_PAGE_SIZE:20,URLSearchParams,JSON,ne,
+const nc = vm.createContext({S,NOTICE_UI:noticesUi,NOTICE_UI_PAGE_SIZE:20,NOTICE_DEMO_MODE:false,URLSearchParams,JSON,ne,
   currentCatTab(){return 'dyn';},noticeSetMode(){},noticeApi:async url=>{noticeRequests.push(url);return {rows:[],groups:[],routes:[],tags:[],total:0};},
   noticeOptions(){return '';},noticeIcon(){return '';},noticeBoardHtml(){return '';},nh:String,
   noticeScopeHtml(){return '';},noticeBindImages(){},noticeScheduleAlignment(){},

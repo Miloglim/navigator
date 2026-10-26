@@ -1,7 +1,7 @@
 """Announcement persistence and HTTP route adapters."""
 import json
 import uuid
-from core.contracts import ACCOUNT_AVATAR_ALL_IDS, ACCOUNT_AVATAR_PREF, ok
+from core.contracts import ACCOUNT_AVATAR_ALL_IDS, ACCOUNT_AVATAR_PREF, ADMIN_ROLES, ok
 from core.notice_contracts import (NOTICES_ROUTE, NOTICE_SAVE_ROUTE, NOTICE_DELETE_ROUTE,
     NOTICE_PIN_ROUTE, NOTICE_PAGE_SIZE, NOTICE_PAGE_MAX)
 from services.notices import (notice_expiry, notice_form, notice_matches, pin_transition,
@@ -76,7 +76,7 @@ def build_notice_routes(connect, now, log, on_pin_request=None, on_pin_result=No
                     else:
                         where.append(col+'=?'); args.append(value)
             if query.get('pending') == '1':
-                if query.get('_role') != 'admin':
+                if query.get('_role') not in ADMIN_ROLES:
                     raise PermissionError('只有管理员可查看置顶审核列表')
                 where.append("pin_state='pending'")
             clause = ' AND '.join(where)
@@ -122,7 +122,7 @@ def build_notice_routes(connect, now, log, on_pin_request=None, on_pin_result=No
             current_groups, current_routes = notice_targets(row) if row else ([], [])
             form = dict(body)
             if row:
-                if row['author_id'] != body['_actor_id'] and body['_role'] != 'admin':
+                if row['author_id'] != body['_actor_id'] and body['_role'] not in ADMIN_ROLES:
                     raise PermissionError('只能编辑自己的公告')
                 if 'target_groups' not in body and 'group_name' not in body:
                     form['target_groups'] = current_groups
@@ -136,7 +136,7 @@ def build_notice_routes(connect, now, log, on_pin_request=None, on_pin_result=No
             if 'expires_on' in body:
                 fields['expires_on'] = notice_expiry(body['expires_on'], now()[:10])
             if body.get('id'):
-                if row['author_id'] != body['_actor_id'] and body['_role'] != 'admin':
+                if row['author_id'] != body['_actor_id'] and body['_role'] not in ADMIN_ROLES:
                     raise PermissionError('只能编辑自己的公告')
                 # A changed pinned post must not bypass sales pin approval.
                 if row['pin_state'] in ('approved','pending') and body['_role'] == 'sales':
@@ -160,7 +160,7 @@ def build_notice_routes(connect, now, log, on_pin_request=None, on_pin_result=No
         conn = connect()
         try:
             row = row_for(conn, body)
-            if row['author_id'] != body['_actor_id'] and body['_role'] != 'admin':
+            if row['author_id'] != body['_actor_id'] and body['_role'] not in ADMIN_ROLES:
                 raise PermissionError('只能删除自己的公告')
             return update(conn,row,body,{'deleted':1,'pin_state':'none'})
         finally:

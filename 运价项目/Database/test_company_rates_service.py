@@ -113,6 +113,29 @@ class CompanyRatesServiceTests(unittest.TestCase):
         self.assertEqual(profile["variants"][0], "BRPEC")
         self.assertIn("Pecem", profile["variants"])
 
+    def test_port_code_and_alias_must_confirm_the_same_company_row(self):
+        local = [{"name": "Sokhna Port", "name_en": "Sokhna Port", "name_cn": "苏赫纳",
+                  "country": "EG", "locode_ref": "EGSOK", "aliases": "苏赫纳,Sokhna,EGSOK"}]
+        profile = local_mapping_profile("Sokhna Port", "port", local)
+        company = [{"id": 29817, "code": "EGSOK", "enName": "SOKHNA", "cnName": "索科纳",
+                    "countryCode": "EGYPT", "type": 11}]
+
+        self.assertEqual(profile["canonical"], "Sokhna Port")
+        self.assertIn("Sokhna", profile["identities"])
+        self.assertEqual(select_exact_port("Sokhna", company, profile["codes"], profile["country"],
+                                           profile["identities"])["id"], 29817)
+        self.assertEqual(select_exact_port("EGSOK", company, profile["codes"], profile["country"],
+                                           profile["identities"])["id"], 29817)
+
+        wrong_code = [{"id": 8952, "code": "CNSHG", "enName": "SHANHAIGUAN", "type": 11}]
+        shanghai = local_mapping_profile(
+            "Shanghai", "port",
+            [{"name": "Shanghai", "country": "CN", "locode_ref": "CNSHG", "aliases": "CNSHG"}],
+        )
+        with self.assertRaisesRegex(ValueError, "无法精确匹配港口"):
+            select_exact_port("CNSHG", wrong_code, shanghai["codes"], shanghai["country"],
+                              shanghai["identities"])
+
     def test_carrier_uses_master_aliases_without_inventing_company_codes(self):
         profile = local_mapping_profile("HPL", "carrier", [{"code": "HPL", "aliases": "HAPAG-LLOYD,HLCU"}])
         self.assertIn("HAPAG-LLOYD", profile["variants"])

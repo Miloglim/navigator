@@ -1,12 +1,25 @@
 """Pure semantic manifest comparison; counts alone cannot prove completeness."""
 import hashlib
 import json
+import re
 from core.contracts import SUBMISSION_COVERAGE_VERSION, SUBMISSION_IDENTITY_FIELDS
+
+
+SOURCE_ROW_IN_REMARK = re.compile(r'(?:^|[;；])\s*(来源行=[^;；\n]+)')
 
 
 def projection(kind, record):
     out = {key: str(record.get(key) if record.get(key) is not None else '').strip()
            for key in SUBMISSION_IDENTITY_FIELDS}
+    if record.get('partial_review') is True or record.get('message_partial_review') is True:
+        # The human-readable partial failure text changes after retries. Source-row identity is the
+        # stable part of remark needed here; all product fields still participate in the fingerprint.
+        source_row = str(record.get('_source_row') or '').strip()
+        out['备注'] = ('来源行=' + source_row) if source_row else ';'.join(
+            match.group(1).strip() for match in SOURCE_ROW_IN_REMARK.finditer(out['备注']))
+        for field in ('起运港', '目的港'):
+            if '/' in out[field]:
+                out[field] = out[field].split('/', 1)[0].strip()
     price = record.get('海运费USD')
     if price in (None, ''):
         price = record.get('价格USD')
@@ -17,6 +30,14 @@ def projection(kind, record):
 
 def fingerprint(kind, record):
     return hashlib.sha256(json.dumps(projection(kind, record), ensure_ascii=False, sort_keys=True).encode('utf-8')).hexdigest()
+
+
+def duplicate_match_fingerprint(kind, record):
+    """Business identity for additive recovery, excluding evidence-only source rows."""
+    normalized = dict(record)
+    normalized.pop('_source_row', None)
+    normalized['备注'] = SOURCE_ROW_IN_REMARK.sub('', str(normalized.get('备注') or '')).strip(' ;；')
+    return fingerprint(kind, normalized)
 
 
 def compare_submission(kind, expected, actual):

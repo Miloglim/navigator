@@ -6,8 +6,8 @@
   "_comment": "写入对象：运价台账（freight_manual.db / manual_server.py）。历史轨迹查询走台账 /api/rates_grouped，不再有钉钉快照。",
   "db": "freight_manual.db"
  },
- "ctype": ["20GP", "40HQ/HC", "40NOR"],
- "ctype_note": "三段报价串拆 20GP/40HQ-HC/40NOR 三条；40GP 与 40HC 同价合并入 40HQ/HC 一档，禁止写 40GP/40HQ/40HC 旧值。台账服务端不强校验柜型枚举，必须 skill 侧自守这三档。",
+ "ctype": ["20GP", "40HQ/HC", "40NOR", "45HQ/HC"],
+ "ctype_note": "报价串按 20GP/40HQ-HC/40NOR/45HQ-HC 逐档拆行；40GP 与 40HC 同价合并入 40HQ/HC，45HQ/45HC 独立保留，不得映射成 40HQ/HC。",
  "space_type_options": ["现舱", "加班船", "放舱开放", "售罄", "舱位紧张", "截关截单", "撤载改期", "箱子动态", "空班", "跳港", "首航"],
  "space_type_note": "与台账 docs/agent-input-contract.md 第3节八档完全一致；台账服务端不强校验舱位类型枚举，必须 skill 侧自守，别用旧 base 的『报备』第九档。",
  "db_conn": {

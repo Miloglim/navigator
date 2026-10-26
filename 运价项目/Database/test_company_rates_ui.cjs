@@ -14,6 +14,9 @@ assert(source.includes('onchange="syncSalesCtypes(this)"'));
 assert(source.includes('id="company-credential-token" type="password"'));
 assert(source.includes('/api/admin/company-credentials'));
 assert(source.includes("token.value=''"));
+assert(source.includes('<details class="company-realtime-controls" id="company-realtime-controls" hidden>'),'realtime inquiry is a collapsed disclosure control');
+assert(source.includes(".company-realtime-action::after { content:'展开查询'; }"),'realtime inquiry exposes an explicit expand action');
+assert(source.includes('button, summary, [role="button"] { -webkit-user-select:none; user-select:none;'),'interactive controls must not enter text selection state');
 
 const company=source.slice(source.indexOf('function companyDateRange'),source.indexOf('/* =================== ROLE SWITCH'));
 const salesSearchSource=source.slice(source.indexOf('function salesSearch()'),source.indexOf('function clearSalesSearch()'));
@@ -26,8 +29,9 @@ const calls=[];
 const sessionValues={};
 const ctypeInputs=[{value:'20GP',checked:false},{value:'40HQ/HC',checked:false},{value:'40NOR',checked:false},{value:'45HQ/HC',checked:false}];
 const context={
+  SALES_PORT_FILTER_MAX:3,
   S:{auth:{user_id:'usr-1'},profile:{display_name:'Sales',preferences:{routes:[],groups:[],ctypes:[],start_tab:'rates'}},
-     sales:{tab:'rates',polTags:['CNSHA'],podTags:['USLAX'],carrier:'COSCO',sorts:{rates:null,space:null},queried:false,page:2,groupScope:null,quoteSelection:new Map(),quoteSpaceSelection:new Map(),companyQuoteItems:new Map(),realtimeQuoteItems:new Map(),quoteKeyRegistry:new Map(),quoteKeySequence:0}},
+     sales:{tab:'rates',polTags:['CNSHA'],podTags:['USLAX'],carrier:'COSCO',sorts:{rates:null,space:null},queried:false,page:2,groupScope:null,realtimeSort:null,quoteSelection:new Map(),quoteSpaceSelection:new Map(),companyQuoteItems:new Map(),realtimeQuoteItems:new Map(),quoteKeyRegistry:new Map(),quoteKeySequence:0}},
   $:element,esc:v=>String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'),currentCatTab:()=> 'rates',toast:(message)=>calls.push(['toast',message]),
   fetch:async(url,options)=>{calls.push(['fetch',url,options]);return {json:async()=>({ok:true,data:{task_id:'crt-1',cached:null}})};},
   setTimeout:()=>{},salesExactFilters:()=>true,commitAllTags:()=>{},renderPersonalScope:()=>{},
@@ -44,7 +48,8 @@ const validity=source.slice(source.indexOf('function salesValidityHtml'),source.
 const ctypeSync=source.slice(source.indexOf('function syncSalesCtypes'),source.indexOf('function salesExactFilters'));
 const salesQuery=source.slice(source.indexOf('function salesQueryParams'),source.indexOf('function salesRequestParams'));
 const selectionHeaders=source.slice(source.indexOf('function quoteSelectAllHeader('),source.indexOf('function quotePickClick('));
-vm.runInContext(selectionHeaders+company+validity+salesSearchSource+ctypeSync+salesQuery,context);
+const currencyHelpers=source.slice(source.indexOf('function currencyCode'),source.indexOf('function explicitCurrencyCode'));
+vm.runInContext(currencyHelpers+selectionHeaders+company+validity+salesSearchSource+ctypeSync+salesQuery,context);
 
 
 (async()=>{
@@ -121,7 +126,7 @@ vm.runInContext(selectionHeaders+company+validity+salesSearchSource+ctypeSync+sa
   assert(rendered.includes('20GP')&&rendered.includes('40HQ/HC')&&rendered.includes('40NOR'));
   assert(rendered.includes('$5002')&&rendered.includes('$5302')&&rendered.includes('$5229'));
   assert(rendered.includes('class="data-table sales-rate-table"'));
-  assert(rendered.includes('sales-source-toggle')&&rendered.includes('公司运价'),'company results have a collapsible source heading');
+  assert(rendered.includes('sales-source-toggle')&&rendered.includes('内询单'),'company results have a collapsible internal inquiry heading');
   assert(rendered.includes('已完成 · 1 条'),'source heading summarizes status and result count');
   assert(!rendered.includes('8951:8760'),'internal port IDs must not be shown');
   assert(rendered.includes('查看港口与船司对应关系')&&rendered.includes('4550')&&rendered.includes('MSK'));
@@ -168,9 +173,28 @@ vm.runInContext(selectionHeaders+company+validity+salesSearchSource+ctypeSync+sa
   assert.equal((realtimeRows.match(/class="qrow"/g)||[]).length,2);
   assert(realtimeRows.includes('sales-rate-table realtime-rate-table'));
   assert(realtimeRows.includes('2026-10-17')&&realtimeRows.includes('2026-10-26'));
-  assert(realtimeRows.includes('USD 4650')&&realtimeRows.includes('USD 5005'));
+  assert(realtimeRows.includes('$4650')&&realtimeRows.includes('$5005'));
   assert(realtimeRows.includes('class="price realtime-ocean-price has-price"'),'returned ocean price receives the emphasis style');
   assert(realtimeRows.includes('20GP海运费')&&!realtimeRows.includes('40HQ海运费'));
+  assert.equal((realtimeRows.match(/data-realtime-sort=/g)||[]).length,9,'live-capacity exposes every data field as a sortable header');
+  assert(realtimeRows.includes('data-realtime-sort="ocean_price" aria-sort="ascending"'),'live-capacity defaults to ocean price ascending');
+  const sortEntries=[
+    {quote:{carrierName:'ZIM',totalOceanPriceUsd:5100,totalPrice:'5100USD',obtainDate:100,etd:30,eta:40},row:{fresh:true,created_at:1,item:{}}},
+    {quote:{carrierName:'CMA',totalOceanPriceUsd:4800,totalPrice:'4800USD',obtainDate:200,etd:20,eta:30},row:{fresh:true,created_at:2,item:{}}},
+    {quote:{carrierName:'ONE',totalOceanPriceUsd:null,totalPrice:null,obtainDate:null,etd:10,eta:20},row:{fresh:true,created_at:null,item:{}}}
+  ];
+  context.S.sales.realtimeSort={field:'ocean_price',direction:'asc'};
+  assert.deepEqual(context.realtimeSortedEntries(sortEntries).map(entry=>entry.quote.carrierName),['CMA','ZIM','ONE'],'live-capacity prices sort numerically with missing values last');
+  context.S.sales.realtimeSort={field:'ocean_price',direction:'desc'};
+  assert.deepEqual(context.realtimeSortedEntries(sortEntries).map(entry=>entry.quote.carrierName),['ZIM','CMA','ONE'],'live-capacity descending prices keep missing values last');
+  context.S.sales.realtimeSort=null;
+  assert.deepEqual(context.realtimeSortedEntries(sortEntries).map(entry=>entry.quote.carrierName),['CMA','ZIM','ONE'],'live-capacity default sort uses ocean price ascending');
+  assert(context.realtimeSortHeader('ocean_price','海运费').includes('aria-sort="ascending"'),'default live-capacity price order is visible in its header');
+  context.S.sales.realtimeSort=null;context.realtimeToggleSort('ocean_price');assert.equal(context.S.sales.realtimeSort.direction,'desc','clicking the default price header first reverses it');
+  context.realtimeToggleSort('ocean_price');assert.equal(context.S.sales.realtimeSort,null,'second price click restores low-price first');
+  context.realtimeToggleSort('carrier');assert.equal(context.S.sales.realtimeSort.direction,'asc');
+  context.realtimeToggleSort('carrier');assert.equal(context.S.sales.realtimeSort.direction,'desc');
+  context.realtimeToggleSort('carrier');assert.equal(context.S.sales.realtimeSort,null,'third non-default header click restores the default order');
   const noOceanPrice=context.realtimeRateList([{fresh:true,item:{result:[{vessel:'No price'}]}}],1);
   assert(noOceanPrice.includes('class="price realtime-ocean-price"'),'missing ocean price keeps the column layout without the price highlight');
   assert(!noOceanPrice.includes('class="price realtime-ocean-price has-price"'),'missing ocean price is not highlighted as a quote');

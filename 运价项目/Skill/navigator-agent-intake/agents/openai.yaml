@@ -1,0 +1,3 @@
+interface:
+  display_name: "Navigator Agent Intake"
+  short_description: "Submit parsed group-chat rates for review"

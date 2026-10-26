@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "worker": {
+    "enabled": true,
+    "model": "gpt-6-sol",
+    "concurrency": 5
+  },
+  "executables": {
+    "codex_exe": "C:/Users/YQN/AppData/Local/Programs/Codex/app/resources/codex.exe",
+    "dws_exe": "C:/Users/YQN/.local/bin/dws.exe"
+  }
+}

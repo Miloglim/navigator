@@ -23,12 +23,13 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from core.contracts import (SALES_VALID_SINCE_PARAM, PORT_ROUTES_FIELD,
+from core.contracts import (SALES_VALID_SINCE_PARAM, SALES_SEARCH_QUERY_PARAM, SALES_GLOBAL_QUERY_PARAM, SALES_PORT_FILTER_MAX,
+                            PORT_ROUTES_FIELD,
                             PORT_ROUTES_COMPACT_FIELD, PORT_ROUTES_TABLE, OPS_MESSAGE_ID_PARAM, OPS_ID_QUERY_PARAM, SOURCE_MESSAGE_ID_PREFIX)
 from core.contracts import (PENDING_SOURCE_MAX_GROUPS, PendingSourceListResult,
                             PendingBulkApprovalResult, QUOTE_VARIANT_FIELDS,
                             SPACE_DESTINATION_SCOPE_FIELDS)
-from core.contracts import ACCOUNT_ROLES, ROLE_ADMIN, ROLE_OPERATOR
+from core.contracts import ACCOUNT_ROLES, ADMIN_ROLES, ROLE_SUPERADMIN, ROLE_OPERATOR
 from services.port_routes import route_tokens, unique_common_route
 from services.identity_query import normalize_identity_query
 from services.sales_sort import sales_order_sql, sort_sales_groups, parse_sales_sort
@@ -48,7 +49,7 @@ DEFAULT_DB = HERE / "freight_manual.db"
 RATES_MAP: Dict[str, str] = {
     **QUOTE_VARIANT_FIELDS, **SOURCE_FIELDS,
     "起运港": "pol", "目的港": "pod", "航线": "route", "船司": "carrier",
-    "柜型": "container_type", "海运费USD": "price_usd", "有效期船期": "validity_raw",
+    "柜型": "container_type", "海运费USD": "price_usd", "币种": "currency", "有效期船期": "validity_raw",
     "船名航次": "vessel_voyage",
     "目免": "free_days", "亏舱费": "dead_freight", "备注": "remark",
     "来源群": "source_group", "发送人": "sender", "消息时间": "message_time",
@@ -62,19 +63,20 @@ SPACE_MAP: Dict[str, str] = {
     "起运港": "pol", "目的港": "pod", "航线": "route", "船司": "carrier",
     "船名航次": "vessel_voyage", "船期截关": "cutoff_raw", "船期ETD": "etd",
     "箱型箱量": "box_desc", "柜型": "container_type", "箱量": "box_qty",
-    "舱位类型": "space_type", "价格USD": "price_usd", "备注": "remark",
+    "舱位类型": "space_type", "价格USD": "price_usd", "亏舱费": "dead_freight", "备注": "remark",
     "来源群": "source_group", "发送人": "sender", "消息时间": "message_time",
     "消息原文": "message_text", "舱位图": "image_url", "记录状态": "status", "消息ID": "mid",
     "图片名": "image_file", "T/T航程": "transit_days",
     "有效期船期": "validity_raw", "有效期起": "valid_from", "有效期止": "valid_to",
 }
 # 状态类与图片不参与内容指纹：状态会被就地改写，图片引用每次导入都可能变
-KEY_EXCLUDE = set(SOURCE_FIELDS.values()) | {"image_url", "image_file", "status", "overridden_time", "synced_at", "ai_flag"}
+KEY_EXCLUDE = set(SOURCE_FIELDS.values()) | {"image_url", "image_file", "status", "overridden_time", "synced_at", "ai_flag", "currency"}
 UPDATE_BLOCKED = set(SOURCE_FIELDS.values()) | {"image_url", "image_file", "synced_at"}
 INT_COLS: Dict[str, Dict[str, str]] = {
     "rates": {"price_usd": "海运费USD", "dead_freight": "亏舱费",
               "free_days": "Freetime", "transit_days": "T/T航程"},
-    "space": {"price_usd": "价格USD", "transit_days": "T/T航程", "box_qty": "箱量"},
+    "space": {"price_usd": "价格USD", "dead_freight": "亏舱费",
+              "transit_days": "T/T航程", "box_qty": "箱量"},
 }
 # 兼容既有前端状态文案；它们只表示 record_type 对应的当前版本，不再代表物理表。
 DEFAULT_STATUS = {"rates": "当前生效", "space": "当前有效"}
@@ -90,7 +92,7 @@ FILTERS = {OPS_MESSAGE_ID_PARAM: "mid", "entry_id": "entry_id", "pol": "pol", "p
            "ctype": "container_type", "group": "source_group", "status": "status",
            "stype": "space_type", "origin": "origin",
            **{col: col for col in QUOTE_VARIANT_FIELDS.values()}}
-GROUP_FIELDS = ("entry_id", "publisher_id", "publisher_bound", "carrier", "route", "pol", "pod", "etd", "message_time", "sender", "source_group",
+GROUP_FIELDS = ("entry_id", "publisher_id", "publisher_bound", "carrier", "route", "pol", "pod", "etd", "message_time", "sender", "source_group", "currency",
                 "validity_raw", "valid_from", "valid_to", "status", "remark", "message_text",
                 "image_url", "image_file", "free_days", "dead_freight", "transit_days", "synced_at",
                 "content_key", "supersedes", "ai_flag", "service_name", "destination_terminal", *QUOTE_VARIANT_FIELDS.values())
@@ -125,7 +127,7 @@ DDL: Dict[str, str] = {
     "freight_items": """CREATE TABLE IF NOT EXISTS freight_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT, entry_id TEXT NOT NULL UNIQUE, content_key TEXT NOT NULL UNIQUE,
         record_type TEXT NOT NULL DEFAULT 'unclassified',
-        pol TEXT, pod TEXT, route TEXT, carrier TEXT, container_type TEXT, price_usd INTEGER,
+        pol TEXT, pod TEXT, route TEXT, carrier TEXT, container_type TEXT, price_usd INTEGER, currency TEXT NOT NULL DEFAULT 'USD',
         vessel_voyage TEXT, cutoff_raw TEXT, box_desc TEXT, box_qty INTEGER, space_type TEXT,
         validity_raw TEXT, valid_from TEXT, valid_to TEXT, etd TEXT, free_days INTEGER,
         dead_freight INTEGER, transit_days INTEGER, remark TEXT, source_group TEXT, sender TEXT, publisher_id TEXT,
@@ -147,7 +149,7 @@ DDL: Dict[str, str] = {
         role TEXT NOT NULL DEFAULT 'operator', password_hash TEXT,
         password_changed_at TEXT, note TEXT, created_at TEXT,
         display_name TEXT, preferences_json TEXT, publisher_name TEXT, publisher_id TEXT,
-        CHECK (role IN ('admin','operator','sales')))""",
+        CHECK (role IN ('superadmin','admin','operator','sales')))""",
     "auth_sessions": """CREATE TABLE IF NOT EXISTS auth_sessions (
         token_hash TEXT PRIMARY KEY, operator_name TEXT NOT NULL, client_ip TEXT NOT NULL,
         expires_at INTEGER NOT NULL, created_at TEXT NOT NULL)""",
@@ -293,6 +295,8 @@ DDL[ACTIVITY_TABLE] = ACTIVITY_DDL
 DDL[QUOTE_USAGE_TABLE] = QUOTE_USAGE_DDL
 from core.api_monitor_contracts import API_EVENT_DDL, API_EVENT_INDEX_COLUMNS, API_EVENT_TABLE
 DDL[API_EVENT_TABLE] = API_EVENT_DDL
+from core.message_board_contracts import MESSAGE_BOARD_DDL, MESSAGE_BOARD_TABLE
+DDL[MESSAGE_BOARD_TABLE] = MESSAGE_BOARD_DDL
 from ops.item_feedback import SQLITE_DDL as ITEM_FEEDBACK_DDL, ACTIVE_INDEX as ITEM_FEEDBACK_ACTIVE_INDEX, ENTRY_INDEX as ITEM_FEEDBACK_ENTRY_INDEX
 DDL["item_feedback"] = ITEM_FEEDBACK_DDL
 from core.company_rates_contracts import COMPANY_RATE_DDL
@@ -311,6 +315,7 @@ INDEX_PLAN = {
     QUOTE_USAGE_TABLE: list(QUOTE_USAGE_INDEX_COLUMNS),
     "company_rate_tasks": ["user_id", "kind", "query_signature", "created_at"],
     "company_rate_results": ["expires_at"],
+    MESSAGE_BOARD_TABLE: ["created_at", "user_id"],
 }
 MASTER_TABLES: Dict[str, Dict[str, str]] = {
     "ports": {"table": "ports", "pk": "name"},
@@ -498,6 +503,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE carriers ADD COLUMN website_url TEXT")
 
     fcols = {r[1] for r in conn.execute("PRAGMA table_info(freight_items)")}
+    if "currency" not in fcols:
+        conn.execute("ALTER TABLE freight_items ADD COLUMN currency TEXT NOT NULL DEFAULT 'USD'")
+    conn.execute("UPDATE freight_items SET currency='USD' WHERE currency IS NULL OR TRIM(currency)=''")
     for column in QUOTE_VARIANT_FIELDS.values():
         if column not in fcols:
             conn.execute(f"ALTER TABLE freight_items ADD COLUMN {column} TEXT")
@@ -720,6 +728,12 @@ def fold(s: Any) -> str:
     return fold_name(s)
 
 
+def search_text(s: Any) -> str:
+    """Normalize unmatched user search without destroying spaces or word boundaries."""
+    return "".join(ch for ch in unicodedata.normalize("NFKD", str(s or ""))
+                   if not unicodedata.combining(ch)).strip()
+
+
 def split_list(v: Any) -> List[str]:
     out: List[str] = []
     for p in re.split(r"[,，、;；]", str(v or "")):
@@ -757,6 +771,24 @@ def norm_ctype(ct: Any) -> str:
     if c.startswith("40"):
         return "40HQ/HC"
     return str(ct or "")
+
+
+DEFAULT_CURRENCY = "USD"
+CURRENCY_ALIASES = {
+    "美元": "USD", "美金": "USD", "US$": "USD", "$": "USD",
+    "人民币": "CNY", "RMB": "CNY", "人民币元": "CNY",
+    "欧元": "EUR", "港币": "HKD", "港元": "HKD", "英镑": "GBP", "日元": "JPY",
+}
+
+
+def normalize_currency(value: Any, default: str | None = DEFAULT_CURRENCY) -> str:
+    text = str(value or "").strip().upper().replace(" ", "")
+    if not text:
+        return default or ""
+    text = CURRENCY_ALIASES.get(text, text)
+    if not re.fullmatch(r"[A-Z]{3}", text):
+        raise ValueError("币种必须是三位英文代码，例如 USD/EUR/CNY")
+    return text
 
 
 def ctype_list(raw: Any) -> List[str]:
@@ -1221,6 +1253,10 @@ def normalize(cn_record: Dict[str, Any], kind: str, now: str, origin: str, entry
             row[col] = v
     if not row.get("status"):
         row["status"] = DEFAULT_STATUS[kind]
+    if kind == "rates":
+        row["currency"] = normalize_currency(cn_record.get("币种"))
+    elif cn_record.get("币种"):
+        row["currency"] = normalize_currency(cn_record.get("币种"), default="")
     row["record_type"] = kind
     row["entry_id"] = entry_id or new_entry_id()
     if origin == "manual":
@@ -1232,6 +1268,8 @@ def normalize(cn_record: Dict[str, Any], kind: str, now: str, origin: str, entry
     # Empty additive fields must not change fingerprints of pre-upgrade records.
     legacy_keys = [f for f in spec["key"] if f not in QUOTE_VARIANT_FIELDS.values()]
     basis = "\x1f".join(canon_for_key(str(row.get(f) or "")) for f in legacy_keys)
+    if row.get("currency") and row["currency"] != DEFAULT_CURRENCY:
+        basis += "\x1fcurrency=" + str(row["currency"])
     for column in QUOTE_VARIANT_FIELDS.values():
         if row.get(column):
             basis += "\x1f" + column + "=" + canon_for_key(str(row[column]))
@@ -1246,17 +1284,23 @@ def normalize(cn_record: Dict[str, Any], kind: str, now: str, origin: str, entry
 
 
 def upsert_rows(conn: sqlite3.Connection, kind: str, rows: List[Dict[str, Optional[str]]],
-                commit: bool = True, trusted_publisher_id: Optional[str] = None) -> int:
+                commit: bool = True, trusted_publisher_id: Optional[str] = None,
+                trusted_publisher_is_canonical: bool = False) -> int:
     if not rows:
         return 0
     table = TABLES[kind]["table"]
-    cols = sorted({c for r in rows for c in r} | {"publisher_id"})
+    freight_has_currency = kind in ("rates", "space")
+    cols = sorted({c for r in rows for c in r} | {"publisher_id"} | ({"currency"} if freight_has_currency else set()))
     ph = ",".join("?" * len(cols))
     upd = ",".join(f"{c}=excluded.{c}" for c in cols if c not in ("content_key", "entry_id"))
     sql = (f'INSERT INTO {table} ({",".join(cols)}) VALUES ({ph}) '
            f'ON CONFLICT(content_key) DO UPDATE SET {upd}')
     for r in rows:
-        r["publisher_id"] = canonical_publisher(conn, trusted_publisher_id) if trusted_publisher_id else resolve_publisher(conn, r, now_cn())
+        if freight_has_currency and not r.get("currency"):
+            r["currency"] = DEFAULT_CURRENCY
+        r["publisher_id"] = ((trusted_publisher_id if trusted_publisher_is_canonical else
+                              canonical_publisher(conn, trusted_publisher_id))
+                             if trusted_publisher_id else resolve_publisher(conn, r, now_cn()))
         conn.execute(sql, [r.get(c) for c in cols])
     if commit:
         conn.commit()
@@ -1400,6 +1444,11 @@ def validate_record(conn: sqlite3.Connection, master: "Master", kind: str,
         errors.append({"field": "目的范围", "input": "",
                        "msg": "舱位必须填写目的港/港群、航线或航线服务，确保销售可以检索"})
     inv = {v: k for k, v in TABLES[kind]["map"].items()}
+    if kind == "rates" or rec.get("币种"):
+        try:
+            rec["币种"] = normalize_currency(rec.get("币种"), default=DEFAULT_CURRENCY if kind == "rates" else "")
+        except ValueError as error:
+            errors.append({"field": "币种", "input": str(rec.get("币种") or ""), "msg": str(error)})
     cv = str(rec.get("柜型") or "").strip()
     if cv and not ctype_ok(cv):
         errors.append({"field": "柜型", "input": cv, "msg": "柜型只四档：20GP / 40HQ/HC / 40NOR / 45HQ/HC"})
@@ -1571,7 +1620,9 @@ def classify_new_or_update(conn: sqlite3.Connection, kind: str, rec: Dict[str, A
 def push_with_review(conn: sqlite3.Connection, master: "Master", kind: str,
                      records: Iterable[Dict[str, Any]], origin: str = "manual",
                      commit: bool = True, entry_id: Optional[str] = None, viewer: str = "",
-                     trusted_publisher_id: Optional[str] = None) -> Dict[str, Any]:
+                     trusted_publisher_id: Optional[str] = None,
+                     register_sources: bool = True,
+                     trusted_publisher_is_canonical: bool = False) -> Dict[str, Any]:
     """带闸门 + 自动新增/更新判定的录入：校验不过 → rejected（不写库）；
     身份命中当前生效行且内容有变 → 自动留痕（supersedes 指回旧行、旧行标已被覆盖）。
     commit=False 时全程不提交（approve_pending 事务模式：业务写入 + pending 状态 + edit_log
@@ -1594,14 +1645,22 @@ def push_with_review(conn: sqlite3.Connection, master: "Master", kind: str,
             rejected.append({"record": rec, "errors": [{"field": "展开", "input": "",
                           "msg": f"本条展开成 {len(exp)} 行，超过上限 {MAX_EXPAND}：请按实际配对拆开"}]})
             continue
-        for cn in exp:
-            key = (cn.get("消息ID"), cn.get("柜型"), cn.get("目的港"),
-                   cn.get("海运费USD") or cn.get("价格USD"),
-                   *(cn.get(field) or "" for field in QUOTE_VARIANT_FIELDS))
-            if key in seen:
-                continue
-            seen.add(key)
-            rows.append(normalize(cn, kind, now, origin, entry_id=entry_id if len(exp) == 1 else None))
+        expanded_rows = []
+        try:
+            for cn in exp:
+                key = (cn.get("消息ID"), cn.get("柜型"), cn.get("目的港"),
+                       cn.get("海运费USD") or cn.get("价格USD"),
+                       *(cn.get(field) or "" for field in QUOTE_VARIANT_FIELDS))
+                if key in seen:
+                    continue
+                seen.add(key)
+                expanded_rows.append(normalize(cn, kind, now, origin,
+                                               entry_id=entry_id if len(exp) == 1 else None))
+        except ValueError as error:
+            # A stale passed row must be rejected, never escape as a PostgreSQL type error.
+            rejected.append({"record": rec, "errors": [{"field": "数据格式", "input": "", "msg": str(error)}]})
+            continue
+        rows.extend(expanded_rows)
         for r in rows:
             hit = _find_current_by_identity(conn, kind, r, viewer=viewer)
             target = hit["content_key"] if (hit and hit["content_key"] != r["content_key"]) else None
@@ -1612,7 +1671,8 @@ def push_with_review(conn: sqlite3.Connection, master: "Master", kind: str,
                     target = None
             if target:
                 r["supersedes"] = target
-            upsert_rows(conn, kind, [r], commit=False, trusted_publisher_id=trusted_publisher_id)
+            upsert_rows(conn, kind, [r], commit=False, trusted_publisher_id=trusted_publisher_id,
+                        trusted_publisher_is_canonical=trusted_publisher_is_canonical)
             keys.append(r["content_key"])
             src_pairs.append({"来源群": r.get("source_group"), "发送人": r.get("sender")})
             if r.get("supersedes"):
@@ -1624,7 +1684,8 @@ def push_with_review(conn: sqlite3.Connection, master: "Master", kind: str,
         if commit:
             conn.commit()
     # 写入即登记（只补不覆盖，非闸门）：来源群/发送人库里没有的一并登记，人工/批量/心跳三入口都走这里
-    registered = _register_pairs(conn, src_pairs, commit=commit)
+    registered = (_register_pairs(conn, src_pairs, commit=commit) if register_sources else
+                  {"added_groups": [], "added_senders": []})
     if commit:
         conn.commit()
     return {"ok": True, "table": kind, "accepted": accepted, "revised": revised,
@@ -1775,7 +1836,7 @@ def stage_pending(conn: sqlite3.Connection, master: "Master", kind: str,
     preserve_existing_source_rows=True 专供同一来源补缺项：命中已有产品时保留其编号、审计和内容，
     只插入缺失产品；preserved_ids 接收被保留且覆盖本次请求的旧编号。"""
     from services.agent_repair import pending_source_scope
-    from services.submission_coverage import fingerprint
+    from services.submission_coverage import duplicate_match_fingerprint
     source_scope = pending_source_scope(records, preserve_other_sources, preserve_existing_source_rows)
     if preserve_existing_source_rows and kind not in ("rates", "space"):
         raise ValueError("preserve_existing_source_rows supports rates/space only")
@@ -1887,9 +1948,9 @@ def stage_pending(conn: sqlite3.Connection, master: "Master", kind: str,
                     continue
                 loose_matches.append((old, of, ot, old_etd))
             if preserve_existing_source_rows:
-                expected_fingerprint = fingerprint(kind, one)
+                expected_fingerprint = duplicate_match_fingerprint(kind, one)
                 def covered(old):
-                    return old in audited_ids or fingerprint(kind, awaiting_payloads[old]) == expected_fingerprint
+                    return old in audited_ids or duplicate_match_fingerprint(kind, awaiting_payloads[old]) == expected_fingerprint
                 exact_matches = [old for old in exact_matches if covered(old)]
                 loose_matches = [item for item in loose_matches if covered(item[0])]
             if preserve_existing_source_rows and (exact_matches or loose_matches):
@@ -2083,6 +2144,7 @@ def _pending_row(r: Optional[sqlite3.Row]) -> Optional[Dict[str, Any]]:
 
 
 GRP_KEY_SQL = ("COALESCE(NULLIF(TRIM(json_extract({t}.payload,'$.消息ID')),''), 'row-'||{t}.id)")
+PENDING_BULK_SOURCE_CHUNK = 500
 # 半连接而非相关子查询：后者会让外层每一行都全表重扫一遍（354 行实测 770ms/次，列表要跑两次）。
 # 键值必须非 NULL（COALESCE 兜成 row-<id>），否则 "NOT (NULL IN ...)" 是 unknown，
 # 没带消息ID 的通过行会被整条挤出「已通过」页签。
@@ -2228,7 +2290,7 @@ def list_pending_sources(conn: sqlite3.Connection, status: str = "awaiting", kin
     keys = [key for key, group in groups.items()
             if (check != "failed" or group["bad"] > 0)
             and (check != "passed" or group["bad"] == 0)]
-    keys.sort(key=lambda key: groups[key]["last_id"], reverse=True)
+    keys.sort(key=lambda key: (groups[key]["bad"] > 0, groups[key]["last_id"]), reverse=True)
     page_size = max(1, min(limit, PENDING_SOURCE_MAX_GROUPS))
     page_keys = keys[max(0, offset):max(0, offset) + page_size]
     out = []
@@ -2533,9 +2595,12 @@ def _register_pairs(conn: sqlite3.Connection, pairs: List[Dict[str, Any]],
 
 
 def approve_pending(conn: sqlite3.Connection, master: "Master", pid: int,
-                    reviewed_by: str = "", viewer: str = "", commit: bool = True) -> Dict[str, Any]:
+                    reviewed_by: str = "", viewer: str = "", commit: bool = True,
+                    register_sources: bool = True,
+                    pending_row: Optional[Any] = None,
+                    canonical_publisher_id: Optional[str] = None) -> Dict[str, Any]:
     lock = " FOR UPDATE" if getattr(conn, "engine", "sqlite") == "postgres" else ""
-    row = conn.execute("SELECT * FROM pending_records WHERE id = ?" + lock, (pid,)).fetchone()
+    row = pending_row or conn.execute("SELECT * FROM pending_records WHERE id = ?" + lock, (pid,)).fetchone()
     if not row:
         return {"ok": False, "error": "not found"}
     if row["review_status"] != "awaiting":
@@ -2563,7 +2628,8 @@ def approve_pending(conn: sqlite3.Connection, master: "Master", pid: int,
                      "reviewed_at=?, reviewed_by=? WHERE id=?",
                      (res["key"], now_cn(), reviewed_by, pid))
         _append_edit_log(conn, pid, [{"ts": now_cn(), "actor": reviewed_by or "unknown",
-                                      "action": "approve", "field": "", "old": None, "new": None}])
+                                      "action": "approve", "field": "", "old": None, "new": None}],
+                         current_log=row["edit_log"])
         if commit:
             conn.commit()
         return {"ok": True, "kind": GSUG_KIND, "result": res,
@@ -2573,7 +2639,9 @@ def approve_pending(conn: sqlite3.Connection, master: "Master", pid: int,
     # 崩溃窗内业务表已写但 pending 仍 awaiting → 重复放行重复入库。
     res = push_with_review(conn, master, row["kind"], [json.loads(row["payload"])],
                            origin=row["origin"], commit=False, entry_id=row["entry_id"], viewer=viewer,
-                           trusted_publisher_id=row['publisher_id'])
+                           trusted_publisher_id=(canonical_publisher_id or row['publisher_id']),
+                           register_sources=register_sources,
+                           trusted_publisher_is_canonical=bool(canonical_publisher_id))
     if res["rejected"]:
         if not commit:
             return {"ok": False, "error": "放行前校验未通过", "errors": res["rejected"][0]["errors"]}
@@ -2584,14 +2652,6 @@ def approve_pending(conn: sqlite3.Connection, master: "Master", pid: int,
                      (json.dumps(errs, ensure_ascii=False), pid))
         conn.commit()
         return {"ok": False, "error": "放行前校验未通过", "errors": errs}
-    cur = conn.execute("UPDATE pending_records SET review_status='approved', final_key=?, "
-                       "reviewed_at=?, reviewed_by=? WHERE id=? AND review_status='awaiting'",
-                       (",".join(res["keys"]) or None, now_cn(), reviewed_by, pid))
-    if not cur.rowcount:
-        # 乐观锁：读到 awaiting 后被并发请求抢先处理 → 回滚本次业务写入，绝不重复入库
-        if commit:
-            conn.rollback()
-        return {"ok": False, "error": "该条已被其他人处理，本次放行已回滚"}
     # P0 审计 + P3-A 观察流：对比 orig_payload（agent 原始判定）vs 最终 payload（人工放行版）
     payload = json.loads(row["payload"] or "{}")
     try:
@@ -2605,9 +2665,17 @@ def approve_pending(conn: sqlite3.Connection, master: "Master", pid: int,
         if str(orig.get(k, "")) != str(payload.get(k, "")):
             diffs.append({"ts": now_cn(), "actor": reviewed_by or "unknown", "action": "approve_diff",
                           "field": k, "old": orig.get(k), "new": payload.get(k)})
-    _append_edit_log(conn, pid,
-                     [{"ts": now_cn(), "actor": reviewed_by or "unknown", "action": "approve",
-                       "field": "", "old": None, "new": None}] + diffs)
+    edit_log = _merged_edit_log(row["edit_log"], [
+        {"ts": now_cn(), "actor": reviewed_by or "unknown", "action": "approve",
+         "field": "", "old": None, "new": None}, *diffs])
+    cur = conn.execute("UPDATE pending_records SET review_status='approved', final_key=?, "
+                       "reviewed_at=?, reviewed_by=?, edit_log=? WHERE id=? AND review_status='awaiting'",
+                       (",".join(res["keys"]) or None, now_cn(), reviewed_by, edit_log, pid))
+    if not cur.rowcount:
+        # 乐观锁：读到 awaiting 后被并发请求抢先处理 → 回滚本次业务写入，绝不重复入库
+        if commit:
+            conn.rollback()
+        return {"ok": False, "error": "该条已被其他人处理，本次放行已回滚"}
     n_obs = _observe_from_diffs(conn, payload, diffs, pid)
     if commit:
         conn.commit()          # Bulk caller commits or rolls back the complete source.
@@ -2626,22 +2694,29 @@ _OBSERVE_FIELDS = {"目的港": "pod", "起运港": "pol", "船司": "carrier",
                    "航线": "route", "舱位类型": "space_type", "柜型": "ctype"}
 
 
-def _append_edit_log(conn: sqlite3.Connection, pid: int, entries: List[Dict[str, Any]]) -> None:
+def _append_edit_log(conn: sqlite3.Connection, pid: int, entries: List[Dict[str, Any]],
+                     current_log: Optional[str] = None) -> None:
     """追加审核动作日志（不 commit，由调用方统一提交）"""
     if not entries:
         return
-    row = conn.execute("SELECT edit_log FROM pending_records WHERE id=?", (pid,)).fetchone()
-    if not row:
-        return
+    if current_log is None:
+        row = conn.execute("SELECT edit_log FROM pending_records WHERE id=?", (pid,)).fetchone()
+        if not row:
+            return
+        current_log = row["edit_log"]
+    conn.execute("UPDATE pending_records SET edit_log=? WHERE id=?",
+                 (_merged_edit_log(current_log, entries), pid))
+
+
+def _merged_edit_log(current_log: Optional[str], entries: List[Dict[str, Any]]) -> str:
     try:
-        log_list = json.loads(row["edit_log"] or "[]")
+        log_list = json.loads(current_log or "[]")
         if not isinstance(log_list, list):
             log_list = []
     except Exception:
         log_list = []
     log_list.extend(entries)
-    conn.execute("UPDATE pending_records SET edit_log=? WHERE id=?",
-                 (json.dumps(log_list, ensure_ascii=False), pid))
+    return json.dumps(log_list, ensure_ascii=False)
 
 
 def _observe_from_diffs(conn: sqlite3.Connection, final_payload: Dict[str, Any],
@@ -2651,6 +2726,26 @@ def _observe_from_diffs(conn: sqlite3.Connection, final_payload: Dict[str, Any],
     # Edits already remain in edit_log. Independent human-source learning runs
     # through scan_audit_corrections, never as a side effect of approval.
     return 0
+
+
+def _load_pending_source_rows(conn: sqlite3.Connection, keys: Iterable[str]) -> Dict[str, List[Any]]:
+    """Load all siblings for bulk candidates in one bounded set of queries."""
+    unique_keys = list(dict.fromkeys(str(key) for key in keys if key is not None))
+    if not unique_keys:
+        return {}
+    source = _pending_source_key_sql("p")
+    grouped: Dict[str, List[Any]] = {}
+    for start in range(0, len(unique_keys), PENDING_BULK_SOURCE_CHUNK):
+        chunk = unique_keys[start:start + PENDING_BULK_SOURCE_CHUNK]
+        placeholders = ",".join("?" for _ in chunk)
+        rows = conn.execute(
+            "SELECT p.id,p.kind,p.check_status,p.payload," + source + " AS source_key "
+            "FROM pending_records p WHERE p.review_status='awaiting' "
+            "AND p.kind IN ('rates','space') AND " + source + " IN (" + placeholders + ") "
+            "ORDER BY p.id", chunk).fetchall()
+        for row in rows:
+            grouped.setdefault(row["source_key"], []).append(row)
+    return grouped
 
 
 def approve_all_pending(conn: sqlite3.Connection, master: "Master", kind: str = "",
@@ -2663,27 +2758,46 @@ def approve_all_pending(conn: sqlite3.Connection, master: "Master", kind: str = 
                             + frag + " ORDER BY p.id", args):
         groups.setdefault(row["source_key"], []).append(row["id"])
     conn.commit()
-    approved, approved_ids, skipped = 0, [], []
+    prefetched = _load_pending_source_rows(conn, groups)
+    conn.commit()
+    approved, approved_groups, approved_ids, skipped = 0, 0, [], []
     for key, ids in groups.items():
+        loaded = prefetched.get(key, [])
+        target_ids = {r["id"] for r in loaded
+                      if kind not in ("rates", "space") or r["kind"] == kind}
+        if target_ids != set(ids) or any(r["check_status"] != "passed" for r in loaded):
+            reason = "同组仍有未过项；整组未批量放行"
+            skipped.extend({"id": pid, "msg": reason} for pid in ids)
+            continue
         try:
             lock = " FOR UPDATE" if getattr(conn, "engine", "sqlite") == "postgres" else ""
             if not lock:
                 conn.execute("BEGIN IMMEDIATE")
-            rows = conn.execute("SELECT p.id,p.kind,p.check_status FROM pending_records p"
+            rows = conn.execute("SELECT p.* FROM pending_records p"
                                 " WHERE p.review_status='awaiting' AND p.kind IN ('rates','space')"
                                 " AND " + source + "=? ORDER BY p.id" + lock, (key,)).fetchall()
             target_ids = {r["id"] for r in rows if kind not in ("rates", "space") or r["kind"] == kind}
             if target_ids != set(ids) or any(r["check_status"] != "passed" for r in rows):
                 conn.rollback()
-                skipped.extend({"id": pid, "msg": "整组状态或范围已变化，整组未放行"} for pid in ids)
+                reason = "同组仍有未过项；整组未批量放行"
+                skipped.extend({"id": pid, "msg": reason} for pid in ids)
                 continue
+            by_id = {r["id"]: r for r in rows}
+            publisher_ids = {r["publisher_id"] for r in rows if r["publisher_id"]}
+            canonical_ids = {raw: canonical_publisher(conn, raw) for raw in publisher_ids}
+            source_pairs = []
             failed = None
             for pid in ids:
                 result = approve_pending(conn, master, pid, reviewed_by or "一键放行",
-                                         viewer=viewer, commit=False)
+                                         viewer=viewer, commit=False, register_sources=False,
+                                         pending_row=by_id[pid],
+                                         canonical_publisher_id=canonical_ids.get(by_id[pid]["publisher_id"]))
                 if not result.get("ok"):
                     failed = (pid, result)
                     break
+                payload = json.loads(by_id[pid]["payload"] or "{}")
+                source_pairs.append({"来源群": payload.get("来源群") or payload.get("source_group"),
+                                     "发送人": payload.get("发送人") or payload.get("sender")})
             if failed:
                 conn.rollback()
                 pid, result = failed
@@ -2695,8 +2809,10 @@ def approve_all_pending(conn: sqlite3.Connection, master: "Master", kind: str = 
                 reason = "整组未放行：" + str(result.get("error") or "放行失败")
                 skipped.extend({"id": item, "msg": reason} for item in ids)
                 continue
+            _register_pairs(conn, source_pairs, commit=False)
             conn.commit()
             approved += len(ids)
+            approved_groups += 1
             approved_ids.extend(ids)
         except Exception:
             conn.rollback()
@@ -2707,6 +2823,7 @@ def approve_all_pending(conn: sqlite3.Connection, master: "Master", kind: str = 
                              eligible_args).fetchone()[0]
     held = conn.execute("SELECT COUNT(*) FROM pending_records p " + held_where, held_args).fetchone()[0]
     return {"ok": True, "total": sum(len(ids) for ids in groups.values()), "approved": approved,
+            "approved_groups": approved_groups,
             "approved_ids": approved_ids,
             "skipped": skipped, "remaining_passed": remaining, "held_by_group": held}
 
@@ -3547,18 +3664,31 @@ def scope_clause(conn: sqlite3.Connection, viewer: str,
     return column + ' = ' + _lit(row['publisher_id'])
 
 
-def _multi_filter(master: "Master", col: str, raw: Any, expand_groups: bool) -> Tuple[str, List[Any]]:
+def _multi_filter(conn: sqlite3.Connection, master: "Master", col: str,
+                  raw: Any, expand_groups: bool, include_text: bool,
+                  cols: set) -> Tuple[str, List[Any]]:
     """pol/pod 支持逗号分隔多值：每值内部走 port_filter（保留群↔成员双向展开），多值之间 OR。
-    单值时等价原行为；跨字段（pol 与 pod 同时有值）由上层 AND 组合 = 交集。"""
-    toks = [t.strip() for t in str(raw or "").split(",") if t.strip()]
+    勾选全局查询时，港口词才额外附带匹配消息原文和备注；默认只匹配结构化港口。
+    跨字段（pol 与 pod 同时有值）由上层 AND 组合 = 交集。"""
+    toks = list(dict.fromkeys(t.strip() for t in str(raw or "").split(",") if t.strip()))
     if not toks:
         return f"{col} = ?", [""]
+    if len(toks) > SALES_PORT_FILTER_MAX:
+        label = "起运港" if col == "pol" else "目的港"
+        raise ValueError(f"{label}最多选择 {SALES_PORT_FILTER_MAX} 个")
+    original_fields = [field for field in ("message_text", "remark") if field in cols] if include_text else []
+    operator = "ILIKE" if getattr(conn, "engine", "") == "postgres" else "LIKE"
     frags: List[str] = []; args: List[Any] = []
     for t in toks:
         if master.group_by_name:
             f, v = master.port_filter(col, t, expand_members=expand_groups)
         else:
             f, v = f"{col} = ?", [t]
+        term = search_text(t)
+        if f != "1=0" and term and original_fields:
+            text_match = "(" + " OR ".join(f"{field} {operator} ?" for field in original_fields) + ")"
+            f = f"({f} OR {text_match})"
+            v += [f"%{term}%"] * len(original_fields)
         frags.append(f); args += v
     return ("(" + " OR ".join(frags) + ")"), args
 
@@ -3568,6 +3698,7 @@ def _where(conn: sqlite3.Connection, master: Master, kind: str, q: Dict[str, str
     spec = TABLES[kind]
     cols = set(spec["map"].values()) | {"entry_id", "origin", "transit_days", "supersedes"}
     expand_groups = (q.get("nogroup") or "") != "1"   # 销售端传 nogroup=1：不展开港群，按单港精确匹配
+    include_text = (q.get(SALES_GLOBAL_QUERY_PARAM) or "") == "1"
     where, args = ["record_type = ?"], [kind]
     if q.get('_client_app') == 'prospector':
         if with_status:
@@ -3595,7 +3726,7 @@ def _where(conn: sqlite3.Connection, master: Master, kind: str, q: Dict[str, str
         if not val or (val == "all" and key not in (OPS_MESSAGE_ID_PARAM, "entry_id")) or col not in cols:
             continue
         if col in ("pol", "pod"):
-            frag, vals = _multi_filter(master, col, val, expand_groups)   # 多值 OR；每值保留群↔成员双向展开
+            frag, vals = _multi_filter(conn, master, col, val, expand_groups, include_text, cols)
             where.append(frag)
             args += vals
         elif key == OPS_MESSAGE_ID_PARAM:
@@ -3666,11 +3797,16 @@ def _where(conn: sqlite3.Connection, master: Master, kind: str, q: Dict[str, str
             tm.append("substr(message_time, 1, 10) <= ?")
             args.append(tt[:10])
         where.append("(" + " AND ".join(tm) + ")")
-    kw = (q.get("q") or "").strip()
+    kw = search_text(q.get(SALES_SEARCH_QUERY_PARAM))
     if kw:
         like = f"%{kw}%"
-        where.append("(pod LIKE ? OR message_text LIKE ? OR remark LIKE ? OR validity_raw LIKE ?)")
-        args += [like] * 4
+        operator = "ILIKE" if getattr(conn, "engine", "") == "postgres" else "LIKE"
+        search_fields = ['pod', 'pol', 'carrier', 'route', 'service_name',
+                         'vessel_voyage', 'validity_raw', 'message_text', 'remark']
+        search_fields = [field for field in search_fields if field in cols]
+        if search_fields:
+            where.append("(" + " OR ".join(f"{field} {operator} ?" for field in search_fields) + ")")
+            args += [like] * len(search_fields)
     scope = scope_clause(conn, q.get("viewer") or "")
     if scope:
         where.append(scope)
@@ -3957,19 +4093,19 @@ def ensure_account_schema(conn, commit: bool = True) -> Dict[str, Any]:
             checks = conn.execute("SELECT conname,pg_get_constraintdef(oid) AS definition FROM pg_constraint "
                                   "WHERE conrelid='operators'::regclass AND contype='c'").fetchall()
             role_checks = [row for row in checks if "role" in row["definition"]]
-            if not role_checks or any("'sales'" not in row["definition"] for row in role_checks):
+            if not role_checks or any(any("'" + role + "'" not in row["definition"] for role in ACCOUNT_ROLES) for row in role_checks):
                 for row in role_checks:
                     identifier = '"' + row["conname"].replace('"', '""') + '"'
                     conn.execute("ALTER TABLE operators DROP CONSTRAINT " + identifier)
                 conn.execute("ALTER TABLE operators ADD CONSTRAINT operators_role_check "
-                             "CHECK(role IN ('admin','operator','sales'))")
+                             "CHECK(role IN ('superadmin','admin','operator','sales'))")
             conn.execute("ALTER TABLE operators ADD COLUMN IF NOT EXISTS user_id TEXT")
             conn.execute("ALTER TABLE operators ADD COLUMN IF NOT EXISTS display_name TEXT")
             conn.execute("ALTER TABLE operators ADD COLUMN IF NOT EXISTS preferences_json TEXT")
             conn.execute("ALTER TABLE operators ADD COLUMN IF NOT EXISTS publisher_name TEXT")
         else:
             definition = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='operators'").fetchone()[0]
-            if "'sales'" not in definition:
+            if any("'" + role + "'" not in definition for role in ACCOUNT_ROLES):
                 conn.execute("ALTER TABLE operators RENAME TO operators_auth_legacy")
                 conn.execute(DDL["operators"])
                 columns = [row[1] for row in conn.execute("PRAGMA table_info(operators_auth_legacy)")]
@@ -4007,7 +4143,7 @@ def ensure_account_schema(conn, commit: bool = True) -> Dict[str, Any]:
 def protect_last_admin(conn, name: str) -> None:
     """Call before deactivating, demoting or deleting a login-capable administrator."""
     lock = " FOR UPDATE" if getattr(conn, "engine", "sqlite") == "postgres" else ""
-    administrators = conn.execute("SELECT name FROM operators WHERE role='admin' AND active=1 "
+    administrators = conn.execute("SELECT name FROM operators WHERE role IN ('superadmin','admin') AND active=1 "
                                   "AND password_hash IS NOT NULL ORDER BY name" + lock).fetchall()
     if len(administrators) == 1 and administrators[0]["name"] == name:
         raise PermissionError("不能停用、降级或删除最后一个可登录的管理员")
@@ -4031,8 +4167,8 @@ def save_operator(conn: sqlite3.Connection, data: Dict[str, Any], commit: bool =
             "role": str(data.get("role") or "operator"), "note": coerce(data.get("note")),
             "publisher_name": coerce(data.get("publisher_name")) or name}
     if cols["role"] not in ACCOUNT_ROLES:
-        raise ValueError("role must be admin, operator or sales")
-    if previous and previous["role"] == ROLE_ADMIN and (cols["role"] != ROLE_ADMIN or not cols["active"]):
+        raise ValueError("role must be superadmin, admin, operator or sales")
+    if previous and previous["role"] in ADMIN_ROLES and (cols["role"] not in ADMIN_ROLES or not cols["active"]):
         protect_last_admin(conn, name)
     if not previous or not previous["user_id"]:
         cols["user_id"] = legacy_user_id(name) if previous else "usr_" + uuid.uuid4().hex
@@ -4941,7 +5077,7 @@ def scan_audit_corrections(conn: sqlite3.Connection, min_count: int = 3,
     from collections import defaultdict
     from datetime import datetime as _dt
     groups: Dict[tuple, List[tuple]] = defaultdict(list)
-    human_actors = {r[0] for r in conn.execute("SELECT name FROM operators WHERE role IN ('admin','operator')")}
+    human_actors = {r[0] for r in conn.execute("SELECT name FROM operators WHERE role IN ('superadmin','admin','operator')")}
     seen_sources = set()
     rows = conn.execute(
         "SELECT id, payload, edit_log FROM pending_records "
@@ -5240,12 +5376,22 @@ def sync_rows(conn: sqlite3.Connection, table: str, rows: List[Dict[str, Any]],
         pk = {"operators": "name", "chat_groups": "name", "account_recovery_requests": "name", "announcements": "id",
               NOTIFICATION_TABLE:"notification_id",
               'account_profiles':'user_id','account_security':'user_id','account_events':'event_id',
+              ACTIVITY_TABLE:'event_id',QUOTE_USAGE_TABLE:'event_id',API_EVENT_TABLE:'request_id',
               'quote_publishers':'publisher_id','publisher_sources':'source_key','publisher_legacy_names':'sender_name','publisher_dingtalk_ids':'identity_key',
               GROWTH_TABLE:'event_id','item_feedback':'id'}.get(table)
     if table in id_tables:
         pk = "id"
     if pk is None and any(s["table"] == table for s in TABLES.values()):
         pk = "content_key"
+    if pk is None and table not in composite_keys:
+        definition = DDL.get(table, "")
+        composite = re.search(r"PRIMARY\s+KEY\s*\(([^)]+)\)", definition, re.IGNORECASE)
+        if composite:
+            composite_keys[table] = tuple(part.strip() for part in composite.group(1).split(','))
+        else:
+            single = re.search(r"\b(\w+)\s+[^,\n]*\bPRIMARY\s+KEY\b", definition, re.IGNORECASE)
+            if single:
+                pk = single.group(1)
     if pk is None and table not in composite_keys:
         raise ValueError(f"unknown table: {table}")
     keys = composite_keys.get(table, (pk,))

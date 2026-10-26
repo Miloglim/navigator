@@ -8,6 +8,16 @@ const fs=require('fs');
     fs.mkdirSync('.work',{recursive:true});
     const page=await browser.newPage({viewport:{width:1440,height:1000}});
     await page.goto('http://127.0.0.1:8795/',{waitUntil:'networkidle'});
+    const remarkDisplay=await page.evaluate(()=>{
+      const internal='[部分解析待核] 卡在coverage；明确报价格未覆盖 45 格，示例: [大段内部数据]；来源行=image:1:row:3';
+      const html=fieldHtml({key:'remark',label:'备注',type:'textarea',full:true},{remark:internal});
+      const host=document.createElement('div');host.innerHTML=html;const textarea=host.querySelector('textarea');
+      return {visible:visibleBusinessRemark(internal),shown:textarea.value,internal:textarea.dataset.internalRemark,normal:visibleBusinessRemark('包含 EFS 与 LWS，按原图确认；来源行=image:1:row:4')};
+    });
+    assert.equal(remarkDisplay.visible,'','internal coverage diagnostics must not render as a business remark');
+    assert.equal(remarkDisplay.shown,'','pending editor must not expose internal partial diagnostics');
+    assert.equal(remarkDisplay.internal,'来源行=image:1:row:3','source-row evidence remains internal for coverage identity');
+    assert.equal(remarkDisplay.normal,'包含 EFS 与 LWS，按原图确认','normal business remarks remain visible');
     await page.evaluate(()=>{
       S.auth={user_id:'fixture',role:'sales',views:['sales']};
       S.role='sales';
@@ -48,11 +58,20 @@ const fs=require('fs');
       applyAccountAccess();
     });
     assert(await sourceGroupTab.isVisible(),'admin accounts can see the source-group page');
+    assert(await page.locator('#cat-tabs [data-tab="space"]').isHidden(),'seat tab stays hidden for regular admin');
+    assert(await page.locator('#cat-tabs [data-tab="dyn"]').isHidden(),'notice tab stays hidden for regular admin');
     await page.evaluate(()=>{
       S.auth={user_id:'fixture-superadmin',role:'superadmin',views:['sales','ops','config','account','monitor']};
       applyAccountAccess();
     });
-    assert(await sourceGroupTab.isVisible(),'future superadmin accounts can reuse the source-group permission');
+    assert(await sourceGroupTab.isVisible(),'superadmin accounts can see the source-group page');
+    assert(await page.locator('#cat-tabs [data-tab="space"]').isVisible(),'superadmin accounts can see the seat tab');
+    assert(await page.locator('#cat-tabs [data-tab="dyn"]').isVisible(),'superadmin accounts can see the notice tab');
+    assert(await page.locator('#cat-tabs [data-tab="board"]').isHidden(),'formal builds keep the development-only message board hidden');
+    assert.equal(await page.locator('#ops-ownership-control').evaluate(node=>node.hidden),false,'superadmin accounts can see ownership controls');
+    assert.equal(await page.locator('#view-account > .ops-tabs').evaluate(node=>node.hidden),false,'superadmin accounts can see all account tabs');
+    assert.equal(await page.locator('#view-account .ops-tabs [data-tab="system"]').evaluate(node=>node.hidden),false,'superadmin accounts can see account administration');
+    assert.equal(await page.locator('#view-account .ops-tabs [data-tab="publishers"]').evaluate(node=>node.hidden),false,'superadmin accounts can see publisher administration');
     await page.evaluate(()=>{
       S.auth={user_id:'fixture',role:'sales',views:['sales']};
       applyAccountAccess();

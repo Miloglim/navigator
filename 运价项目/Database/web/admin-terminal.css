@@ -40,3 +40,4 @@
 .at-health-card>strong.at-health-state{color:#327d61}
 .at-health-card>strong.at-health-state.bad{color:#a84840}
 @media(max-width:760px){.at-health-grid{grid-template-columns:1fr}.at-health-card{padding:14px 16px}.at-runtime-tabs{gap:14px;overflow-x:auto}.at-event-toolbar #at-api-path{min-width:100%}}
+.at-role.superadmin{background:#f8e7d8;color:#914d18}

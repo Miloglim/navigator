@@ -10,12 +10,20 @@ class CenterAuthError(PermissionError):
     """Central authentication failed or was unavailable."""
 
 
-def _error_code(error: HTTPError) -> str:
+class CenterAuthUnavailable(CenterAuthError):
+    """Central identity is temporarily unavailable; preserve the local session."""
+
+
+SAFE_AUTH_MESSAGES = frozenset({"账号已停用或已归档", "当前密码不正确"})
+
+
+def _error_detail(error: HTTPError) -> tuple[str, str]:
     try:
         payload = json.loads(error.read().decode("utf-8"))
-        return str((payload.get("error") or {}).get("code") or "")
+        detail = payload.get("error") or {}
+        return str(detail.get("code") or ""), str(detail.get("message") or "")
     except (OSError, ValueError, AttributeError):
-        return ""
+        return "", ""
 
 
 def _request(
@@ -25,7 +33,8 @@ def _request(
     payload: dict | None = None,
     token: str = "",
     operation: str = "中心身份服务",
-    auth_message: str = "中心账号或 Navigator 权限无效",
+    auth_message: str = "账号或密码错误",
+    forbidden_message: str | None = None,
 ) -> dict:
     url = base_url.rstrip("/") + path
     headers = {"Accept": "application/json"}
@@ -39,19 +48,21 @@ def _request(
         with urlopen(Request(url, data=data, headers=headers, method=method), timeout=8) as response:
             raw = json.loads(response.read().decode("utf-8"))
     except HTTPError as error:
-        if error.code in (401, 403):
-            raise CenterAuthError(auth_message) from error
+        code, message = _error_detail(error)
+        if error.code == 401:
+            raise CenterAuthError(message if message in SAFE_AUTH_MESSAGES else auth_message) from error
+        if error.code == 403:
+            raise CenterAuthError(forbidden_message or message or f"{operation}权限不足") from error
         if error.code == 429:
-            raise CenterAuthError("中心登录尝试过多，请稍后重试") from error
+            raise CenterAuthUnavailable("中心登录尝试过多，请稍后重试") from error
         if error.code == 400:
             raise CenterAuthError(f"{operation}参数无效") from error
-        code = _error_code(error)
         suffix = f"，{code}" if code else ""
-        raise CenterAuthError(f"{operation}暂不可用（HTTP {error.code}{suffix}）") from error
+        raise CenterAuthUnavailable(f"{operation}暂不可用（HTTP {error.code}{suffix}）") from error
     except (URLError, TimeoutError, OSError, ValueError) as error:
-        raise CenterAuthError(f"{operation}暂不可用") from error
+        raise CenterAuthUnavailable(f"{operation}暂不可用") from error
     if not isinstance(raw, dict) or raw.get("ok") is not True:
-        raise CenterAuthError("中心账号或 Navigator 权限无效")
+        raise CenterAuthError(f"{operation}失败")
     return raw.get("data") or {}
 
 
@@ -128,7 +139,9 @@ def register(base_url: str, email: str, password: str) -> dict:
 
 def validate(base_url: str, token: str) -> dict:
     access = _request(base_url, "GET", "/api/navigator/access", token=token,
-                      operation="Navigator 授权查询")
+                      operation="Navigator 授权查询",
+                      auth_message="中心登录已失效，请重新登录",
+                      forbidden_message="当前账号没有 Navigator 权限")
     if not isinstance(access, dict):
         raise CenterAuthError("中心身份响应无效")
     identity = {key: access.get(key) for key in ("userId", "email", "displayName") if access.get(key)}

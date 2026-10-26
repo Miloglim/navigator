@@ -74,7 +74,7 @@ except Exception:  # noqa: BLE001 - 输出重定向到文件时无需处理
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import manualdb  # noqa: E402
-from core.contracts import AGENT_REVIEW_ISSUES_SETTLE_ROUTE
+from core.contracts import AGENT_REVIEW_ISSUES_SETTLE_ROUTE, AGENT_REVIEW_ISSUES_NOISE_ROUTE
 import postgresdb  # noqa: E402
 import price_sanitize  # noqa: E402
 from core.contracts import (PENDING_REJECT_GROUP_ROUTE, PENDING_SOURCE_VIEW, PENDING_WHOLE_PASSED_PARAM, OPS_ID_QUERY_PARAM, MONITORING_GROUPS_ROUTE, MONITORING_RUNS_ROUTE,
@@ -86,7 +86,7 @@ from core.settings import DeploymentSettings  # noqa: E402
 from transport.release_routes import build_release_post_routes  # noqa: E402
 from transport.system_routes import build_system_get_routes  # noqa: E402
 from transport.monitoring_routes import build_monitoring_get_routes  # noqa: E402
-from core.contracts import (AUTH_STATUS_ROUTE, LIVENESS_ROUTE, CENTER_NAVIGATOR_DASHBOARD_ROUTE, ROLE_ADMIN,
+from core.contracts import (AUTH_STATUS_ROUTE, LIVENESS_ROUTE, CENTER_NAVIGATOR_DASHBOARD_ROUTE, ROLE_SUPERADMIN, ROLE_ADMIN, ADMIN_ROLES,
                             PENDING_PRESERVE_OTHER_SOURCES, PENDING_PRESERVE_EXISTING_SOURCE_ROWS,
                             SALES_GROUP_SUMMARY_ROUTE, SALES_GROUP_VISIT_ROUTE, fail, ok)
 from services.access_policy import account_identity, session_security_changed, scoped_sales_query, browser_write_allowed, secure_transport
@@ -116,6 +116,8 @@ from ops import admin_accounts
 from transport.admin_routes import build_admin_routes
 from core.admin_contracts import PASSWORD_CHANGE_REQUIRED
 from transport.notice_routes import build_notice_routes
+from transport.message_board_routes import build_message_board_routes
+from core.message_board_contracts import MESSAGE_BOARD_ROUTE, MESSAGE_BOARD_CREATE_ROUTE
 from core.notice_contracts import NOTICES_ROUTE, NOTICE_SAVE_ROUTE, NOTICE_PIN_ROUTE, NOTICE_REQUEST_MAX
 from core.notification_contracts import NOTIFICATION_GET_ROUTES
 from core.feedback_contracts import FEEDBACK_ROUTE, FEEDBACK_DISMISS_ROUTE
@@ -146,12 +148,15 @@ from ops.company_credentials import CompanyCredentialStore
 from ops.company_token_refresh import CompanyTokenRefresher
 from transport.company_credential_routes import build_company_credential_routes
 
-CFG: Dict[str, str] = {"db": "", "token": "", "backend": "sqlite", "postgres_env_file": "", "center_auth_url": "", "agent_api_token": ""}
+CFG: Dict[str, Any] = {"db": "", "token": "", "backend": "sqlite", "postgres_env_file": "", "center_auth_url": "", "agent_api_token": "", "dev_mode": False}
 CENTER_EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 CENTER_PASSWORD_PATTERN = re.compile(r"^[A-Za-z0-9]{6,256}$")
 CENTER_EMAIL_MAX_LENGTH = 254
 CENTER_SESSION_TOKENS: Dict[str, str] = {}
 CENTER_SESSION_LOCK = RLock()
+CENTER_REFRESH_LOCK = RLock()
+CENTER_AUTH_CACHE: Dict[str, tuple[float, str, Dict[str, Any]]] = {}
+CENTER_AUTH_CACHE_SECONDS = 30
 SESSION_TTL_SECONDS = 30 * 24 * 60 * 60  # Absolute lifetime from login; ordinary reads do not extend it.
 SESSION_COOKIE = "freight_session"
 CENTER_REFRESH_COOKIE = "freight_center_refresh"
@@ -166,6 +171,22 @@ SERVER_STARTED_MONOTONIC = time.monotonic()
 SERVER_REQUEST_QUEUE_SIZE = 128  # 300 人局域网突发打开页面时避免默认 backlog=5 的 TCP 重传
 DEPLOYMENT_SETTINGS = DeploymentSettings.from_env()
 DOWNLOAD_CATALOG = DownloadCatalog(Path(os.environ.get("NAVIGATOR_DOWNLOADS_DIR", str(HERE / ".runtime" / "downloads" / "prospector"))))
+FONT_ASSETS = frozenset({
+    "outfit-latin-wght-normal.woff2",
+    "outfit-latin-ext-wght-normal.woff2",
+    "ibm-plex-mono-latin-400-normal.woff2",
+    "ibm-plex-mono-latin-500-normal.woff2",
+    "ibm-plex-mono-latin-600-normal.woff2",
+    "ibm-plex-mono-latin-ext-400-normal.woff2",
+    "ibm-plex-mono-latin-ext-500-normal.woff2",
+    "ibm-plex-mono-latin-ext-600-normal.woff2",
+})
+CENTER_AUTH_CACHED_READ_ROUTES = frozenset({
+    AUTH_STATUS_ROUTE, "/api/bootstrap", "/api/master", "/api/stats",
+    "/api/rates", "/api/space", "/api/rates_grouped", "/api/space_grouped",
+    "/api/sales/groups", "/api/group-stats", "/api/queue-stats",
+    ACCOUNT_PROFILE_ROUTE, GROWTH_ROUTE, *NOTIFICATION_GET_ROUTES,
+})
 
 
 def log(level: str, msg: str) -> None:
@@ -299,9 +320,18 @@ def password_matches(password: str, stored: str) -> bool:
 def active_admin_exists() -> bool:
     c = conn()
     try:
-        return bool(c.execute("SELECT 1 FROM operators WHERE active=1 AND role='admin' AND password_hash IS NOT NULL LIMIT 1").fetchone())
+        return bool(c.execute("SELECT 1 FROM operators WHERE active=1 AND role IN ('superadmin','admin') AND password_hash IS NOT NULL LIMIT 1").fetchone())
     finally:
         c.close()
+
+
+def center_navigator_role(access: Dict[str, Any]) -> str | None:
+    return {
+        "superadmin": ROLE_SUPERADMIN,
+        "admin": ROLE_ADMIN,
+        "operator": ROLE_OPERATOR,
+        "sales": ROLE_SALES,
+    }.get(str(access.get("role") or ""))
 
 
 def register_center_account(body: Dict[str, Any]) -> Dict[str, Any]:
@@ -359,7 +389,10 @@ def register_center_account(body: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def auth_status(session: Dict[str, Any] | None) -> Dict[str, Any]:
-    return {"ok": True, "authenticated": bool(session), "setup_required": not active_admin_exists(),
+    center_mode = bool(CFG.get("center_auth_url"))
+    return {"ok": True, "authenticated": bool(session), "auth_mode": "center" if center_mode else "local",
+            "setup_required": False if center_mode else not active_admin_exists(),
+            "features": {"message_board": bool(CFG.get("dev_mode"))},
             "user": (account_identity(session) if session else None)}
 
 
@@ -369,27 +402,46 @@ def auth_login(body: Dict[str, Any], client_ip: str) -> tuple[Dict[str, Any], st
         raise ValueError("name and password required")
     if CFG.get("center_auth_url"):
         center = center_auth.login_persistent(CFG["center_auth_url"], name.lower(), password)
-        access = center_auth.validate(CFG["center_auth_url"], center["token"])["access"]
+        center_identity = center["identity"]
+        must_change_password = bool(center_identity.get("mustChangePassword"))
+        access = {} if must_change_password else center_auth.validate(
+            CFG["center_auth_url"], center["token"])["access"]
         c = conn()
         try:
-            role = {"admin": ROLE_ADMIN, "operator": ROLE_OPERATOR, "sales": ROLE_SALES}.get(str(access.get("role") or ""))
-            if not role:
-                raise PermissionError("账号没有 Navigator 产品权限")
-            row = c.execute("SELECT o.user_id,o.name,o.display_name,o.role,o.active,o.password_hash,0 AS must_change_password FROM operators o WHERE lower(o.name)=?", (name.lower(),)).fetchone()
+            role = center_navigator_role(access) if access else None
+            if not must_change_password and not role:
+                raise PermissionError("当前账号没有 Navigator 权限")
+            row = c.execute(
+                "SELECT o.user_id,o.name,o.display_name,o.role,o.active,o.password_hash "
+                "FROM operators o WHERE lower(o.name)=?", (name.lower(),)).fetchone()
             if row and not row["active"]:
-                raise PermissionError("本地运价业务身份已停用")
+                raise PermissionError("Navigator 账号已停用，请联系管理员")
+            assigned_role = role or (row["role"] if row else ROLE_SALES)
             if not row:
                 user_id = "usr_" + secrets.token_hex(16)
-                display_name = center["identity"].get("displayName") or name
+                display_name = center_identity.get("displayName") or name
                 c.execute(
                     "INSERT INTO operators(user_id,name,display_name,role,active,match_mode,created_at) VALUES(?,?,?,?,?,?,?)",
-                    (user_id, name.lower(), display_name, role, 1, "any", manualdb.now_cn()),
+                    (user_id, name.lower(), display_name, assigned_role, 1, "any", manualdb.now_cn()),
                 )
                 admin_accounts.record_event(c, user_id, "account_created", name.lower(), user_id,
                                             {"identity_source": "milogin-center"}, manualdb.now_cn())
             else:
-                c.execute("UPDATE operators SET role=?,password_hash=NULL WHERE user_id=?", (role, row["user_id"]))
-            row = c.execute("SELECT o.user_id,o.name,o.display_name,o.role,o.active,o.password_hash,0 AS must_change_password FROM operators o WHERE lower(o.name)=?", (name.lower(),)).fetchone()
+                c.execute("UPDATE operators SET role=?,password_hash=NULL WHERE user_id=?",
+                          (assigned_role, row["user_id"]))
+            user_id = row["user_id"] if row else user_id
+            c.execute(
+                "INSERT INTO account_security(user_id,must_change_password,revision) VALUES(?,?,1) "
+                "ON CONFLICT(user_id) DO UPDATE SET must_change_password=excluded.must_change_password,"
+                "revision=CASE WHEN account_security.must_change_password<>excluded.must_change_password "
+                "THEN account_security.revision+1 ELSE account_security.revision END",
+                (user_id, 1 if must_change_password else 0),
+            )
+            row = c.execute(
+                "SELECT o.user_id,o.name,o.display_name,o.role,o.active,o.password_hash,"
+                "COALESCE(sec.must_change_password,0) AS must_change_password "
+                "FROM operators o LEFT JOIN account_security sec ON sec.user_id=o.user_id "
+                "WHERE lower(o.name)=?", (name.lower(),)).fetchone()
             sid = secrets.token_urlsafe(32)
             c.execute("INSERT INTO auth_sessions(token_hash,operator_name,client_ip,expires_at,created_at) VALUES(?,?,?,?,?)",
                       (hashlib.sha256(sid.encode("ascii")).hexdigest(), row["name"], client_ip,
@@ -398,13 +450,14 @@ def auth_login(body: Dict[str, Any], client_ip: str) -> tuple[Dict[str, Any], st
             c.commit()
             with CENTER_SESSION_LOCK:
                 CENTER_SESSION_TOKENS[sid] = center["token"]
-            try:
-                account_growth.sync_center(c, CFG["center_auth_url"], center["token"], row["user_id"])
-            except Exception as error:  # noqa: BLE001 - login remains valid and outbox stays pending
-                log("WARN", f"登录后中心经验同步待重试 user={row['user_id']}: {error}")
+            if not must_change_password:
+                try:
+                    account_growth.sync_center(c, CFG["center_auth_url"], center["token"], row["user_id"])
+                except Exception as error:  # noqa: BLE001 - login remains valid and outbox stays pending
+                    log("WARN", f"登录后中心经验同步待重试 user={row['user_id']}: {error}")
             local = dict(row)
-            local["role"] = role
-            local["display_name"] = center["identity"].get("displayName") or row["display_name"] or row["name"]
+            local["role"] = assigned_role
+            local["display_name"] = center_identity.get("displayName") or row["display_name"] or row["name"]
             return {"ok": True, "user": account_identity(local)}, sid, center["refresh_token"]
         finally:
             c.close()
@@ -429,6 +482,8 @@ def auth_login(body: Dict[str, Any], client_ip: str) -> tuple[Dict[str, Any], st
 
 
 def auth_setup(body: Dict[str, Any]) -> Dict[str, Any]:
+    if CFG.get("center_auth_url"):
+        raise PermissionError("账号初始化和管理只能在中心管理库操作")
     if active_admin_exists():
         raise PermissionError("管理员已初始化，请使用管理员账号登录")
     name, password = str(body.get("name") or "").strip(), str(body.get("password") or "")
@@ -502,9 +557,16 @@ def images_for(row: Dict[str, Any]) -> list:
     text = str(row.get("message_text") or row.get("消息原文") or "")
     for m in re.finditer(r"mediaId=(@[A-Za-z0-9_\-]+)", text):
         add(m.group(1))  # 兜底：无 image_file 时按消息原文里的 mediaId 找同名图
-    out = []
+    out, resolved = [], set()
     for nm in names:
         url, found = _resolve_image(nm)
+        # The same image commonly appears both as `mediaId=@id` in text and as
+        # `@id.png` in the payload. Deduplicate by resolved file, not raw label.
+        identity = ("file", found.casefold()) if found else (
+            "name", nm.lstrip("@").rsplit(".", 1)[0].casefold())
+        if identity in resolved:
+            continue
+        resolved.add(identity)
         out.append({"name": nm, "file": found, "url": url, "missing": url is None})
     return out
 
@@ -714,7 +776,7 @@ def act_center_navigator_dashboard(token: str) -> Dict[str, Any]:
     if not CFG.get("center_auth_url"):
         raise RuntimeError("中心身份服务未配置")
     access = center_auth.validate(CFG["center_auth_url"], token).get("access") or {}
-    if access.get("role") not in (ROLE_ADMIN, ROLE_OPERATOR):
+    if access.get("role") not in (ROLE_SUPERADMIN, ROLE_ADMIN, ROLE_OPERATOR):
         raise PermissionError("Navigator 管理摘要需要航管或管理员权限")
     c = conn()
     try:
@@ -762,7 +824,7 @@ def act_bootstrap(role: str = "") -> Dict[str, Any]:
     c = conn()
     try:
         return {"ok": True,
-                "operators": [o for o in manualdb.list_operators(c) if o.get("active")] if role == ROLE_ADMIN else [],
+                "operators": [o for o in manualdb.list_operators(c) if o.get("active")] if role in ADMIN_ROLES else [],
                 "chatGroups": [g for g in manualdb.list_chat_groups(c) if g.get("active")],
                 "options": manualdb.options(c), "stats": manualdb.stats(c)}
     finally:
@@ -914,6 +976,10 @@ def act_operator_save(body: Dict[str, Any]) -> Dict[str, Any]:
     c = conn()
     try:
         before = c.execute("SELECT * FROM operators WHERE name=?", (str(body.get("name") or "").strip(),)).fetchone()
+        if before and before["role"] == ROLE_SUPERADMIN and body.get("_role") != ROLE_SUPERADMIN:
+            raise PermissionError("仅超级管理员可管理超级管理员账号")
+        if body.get("role") == ROLE_SUPERADMIN and body.get("_role") != ROLE_SUPERADMIN:
+            raise PermissionError("仅超级管理员可授予超级管理员角色")
         if not before and not password.strip():
             body["active"] = 0  # A person record does not grant login.
         res = manualdb.save_operator(c, body, commit=False)
@@ -1367,8 +1433,10 @@ def act_named_delete(table: str) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
         c = conn()
         try:
             if table == 'operators':
-                target = c.execute('SELECT user_id,publisher_name FROM operators WHERE name=?',(name,)).fetchone()
+                target = c.execute('SELECT user_id,publisher_name,role FROM operators WHERE name=?',(name,)).fetchone()
                 if target:
+                    if target['role'] == ROLE_SUPERADMIN and body.get('_role') != ROLE_SUPERADMIN:
+                        raise PermissionError("仅超级管理员可管理超级管理员账号")
                     if (target['publisher_name'] or name) in confirmed_people():
                         raise ValueError("该人员仍有已确认的报价发布身份，请先在报价发布人中恢复识别")
                     admin_accounts.record_event(c,target[0],'account_deleted',body.get('_actor') or '管理员',body.get('_actor_id') or 'system',{'name':name},manualdb.now_cn())
@@ -1552,6 +1620,16 @@ def act_review_issues_settle(body: Dict[str, Any]) -> Dict[str, Any]:
         c.close()
 
 
+def act_review_issues_noise(body: Dict[str, Any]) -> Dict[str, Any]:
+    c = conn()
+    try:
+        return ok(manualdb.resolve_review_issue(
+            c, str(body.get("source_group") or ""), str(body.get("message_id") or ""),
+            "agent:noise"))
+    finally:
+        c.close()
+
+
 def act_pending_list(q: Dict[str, str]) -> Dict[str, Any]:
     c = conn()
     try:
@@ -1598,10 +1676,11 @@ def act_pending_regroup(body: Dict[str, Any]) -> Dict[str, Any]:
 def act_pending_approve_all(body: Dict[str, Any]) -> Dict[str, Any]:
     c = conn()
     try:
+        started = time.monotonic()
         res = manualdb.approve_all_pending(c, manualdb.get_master(c),
                                            str(body.get("kind") or ""),
                                            str(body.get("_actor") or body.get("reviewed_by") or ""), viewer=body.get("_scope_viewer") or "")
-        log("INFO", f"一键放行：命中 {res['total']} 条，成功 {res['approved']}，跳过 {len(res['skipped'])}")
+        approval_seconds = time.monotonic() - started
         if res.get("approved"):
             subjects = [(GROWTH_APPROVAL_EVENT, f"pending:{pid}", GROWTH_APPROVAL_POINTS)
                         for pid in res.get("approved_ids", [])]
@@ -1609,6 +1688,9 @@ def act_pending_approve_all(body: Dict[str, Any]) -> Dict[str, Any]:
                                        activity_daily_cap=None)
             if growth and growth["awarded"]:
                 res["growth_award"] = growth
+        res["elapsed_seconds"] = round(time.monotonic() - started, 3)
+        log("INFO", f"一键放行：命中 {res['total']} 条，成功 {res['approved']} 条/{res['approved_groups']} 组，"
+                    f"跳过 {len(res['skipped'])}，审批 {approval_seconds:.3f}s，总计 {res['elapsed_seconds']:.3f}s")
         return res
     finally:
         c.close()
@@ -1933,6 +2015,8 @@ NOTICE_GET, NOTICE_POST = build_notice_routes(
     conn, manualdb.now_cn, log, notifications.replace_notice_request,
     notifications.resolve_notice_request)
 GET_ROUTES.update(NOTICE_GET)
+MESSAGE_BOARD_GET, MESSAGE_BOARD_POST = build_message_board_routes(conn, manualdb.now_cn, log)
+GET_ROUTES.update(MESSAGE_BOARD_GET)
 
 
 def act_notification_action(target: Dict[str, Any], body: Dict[str, Any]) -> Dict[str, Any]:
@@ -2043,6 +2127,7 @@ POST_ROUTES: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     REVIEW_ISSUES_ROUTE: act_review_issues_submit,
     REVIEW_ISSUES_RESOLVE_ROUTE: act_review_issues_resolve,
     AGENT_REVIEW_ISSUES_SETTLE_ROUTE: act_review_issues_settle,
+    AGENT_REVIEW_ISSUES_NOISE_ROUTE: act_review_issues_noise,
     "/api/pending/approve": act_pending_approve,
     "/api/pending/approve_all": act_pending_approve_all,
     "/api/pending/regroup": act_pending_regroup,
@@ -2061,6 +2146,7 @@ POST_ROUTES.update(COMPANY_RATE_POST)
 POST_ROUTES.update(COMPANY_CREDENTIAL_POST)
 POST_ROUTES.update(build_release_post_routes(DEPLOYMENT_SETTINGS))
 POST_ROUTES.update(NOTICE_POST)
+POST_ROUTES.update(MESSAGE_BOARD_POST)
 POST_ROUTES.update(NOTIFICATION_POST)
 from transport.master_resolution_routes import build_master_resolution_routes
 POST_ROUTES.update(build_master_resolution_routes(conn, manualdb.get_master))
@@ -2272,7 +2358,7 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             c.close()
 
-    def _session(self) -> Dict[str, Any] | None:
+    def _session(self, cache_auth: bool = False) -> Dict[str, Any] | None:
         sid = self._session_id()
         if not sid:
             return None
@@ -2286,35 +2372,107 @@ class Handler(BaseHTTPRequestHandler):
             if not row:
                 c.execute("DELETE FROM auth_sessions WHERE token_hash=? OR expires_at<=?", (token_hash, int(time.time())))
                 c.commit()
+                with CENTER_SESSION_LOCK:
+                    CENTER_SESSION_TOKENS.pop(sid, None)
+                    CENTER_AUTH_CACHE.pop(sid, None)
                 return None
             if CFG.get("center_auth_url"):
+                if row.get("must_change_password"):
+                    # The center intentionally blocks product access until the initial
+                    # password is replaced, so only the restricted browser session is
+                    # checked here. Business routes remain gated below.
+                    with CENTER_REFRESH_LOCK:
+                        with CENTER_SESSION_LOCK:
+                            center_token = CENTER_SESSION_TOKENS.get(sid, "")
+                        if not center_token:
+                            refresh_token = self._cookie_value(CENTER_REFRESH_COOKIE)
+                            if refresh_token:
+                                try:
+                                    refreshed = center_auth.refresh(CFG["center_auth_url"], refresh_token)
+                                    with CENTER_SESSION_LOCK:
+                                        CENTER_SESSION_TOKENS[sid] = refreshed["token"]
+                                    self._queue_auth_cookie(
+                                        self._center_refresh_cookie(refreshed["refresh_token"])["Set-Cookie"])
+                                except center_auth.CenterAuthUnavailable:
+                                    raise
+                                except center_auth.CenterAuthError:
+                                    with CENTER_SESSION_LOCK:
+                                        CENTER_SESSION_TOKENS.pop(sid, None)
+                                        CENTER_AUTH_CACHE.pop(sid, None)
+                                    c.execute("DELETE FROM auth_sessions WHERE token_hash=?", (token_hash,))
+                                    c.commit()
+                                    self._queue_auth_cookie(self._session_cookie("", expired=True)["Set-Cookie"])
+                                    self._queue_auth_cookie(self._center_refresh_cookie("", expired=True)["Set-Cookie"])
+                                    return None
+                    self._set_api_monitor_identity(row)
+                    return row
+                # One lock covers token lookup, validation and rotation so concurrent
+                # requests cannot consume the same refresh token twice.
                 access = None
-                with CENTER_SESSION_LOCK:
-                    center_token = CENTER_SESSION_TOKENS.get(sid)
-                if center_token:
-                    try:
-                        access = center_auth.validate(CFG["center_auth_url"], center_token)
-                    except center_auth.CenterAuthError:
-                        access = None
-                if access is None:
-                    refresh_token = self._cookie_value(CENTER_REFRESH_COOKIE)
-                    if refresh_token:
+                validated_token = ""
+                with CENTER_REFRESH_LOCK:
+                    with CENTER_SESSION_LOCK:
+                        center_token = CENTER_SESSION_TOKENS.get(sid, "")
+                        cached = CENTER_AUTH_CACHE.get(sid)
+                    if (cache_auth and center_token and cached and cached[0] > time.monotonic()
+                            and secrets.compare_digest(cached[1], center_token)):
+                        access = cached[2]
+                    if access is None and center_token:
                         try:
-                            refreshed = center_auth.refresh(CFG["center_auth_url"], refresh_token)
-                            access = center_auth.validate(CFG["center_auth_url"], refreshed["token"])
-                            with CENTER_SESSION_LOCK:
-                                CENTER_SESSION_TOKENS[sid] = refreshed["token"]
-                            self._queue_auth_cookie(self._center_refresh_cookie(refreshed["refresh_token"])["Set-Cookie"])
+                            access = center_auth.validate(CFG["center_auth_url"], center_token)
+                            validated_token = center_token
+                        except center_auth.CenterAuthUnavailable:
+                            raise
                         except center_auth.CenterAuthError:
                             access = None
+                    if access is None:
+                        refresh_token = self._cookie_value(CENTER_REFRESH_COOKIE)
+                        if refresh_token:
+                            try:
+                                refreshed = center_auth.refresh(CFG["center_auth_url"], refresh_token)
+                                access = center_auth.validate(CFG["center_auth_url"], refreshed["token"])
+                                validated_token = refreshed["token"]
+                                with CENTER_SESSION_LOCK:
+                                    CENTER_SESSION_TOKENS[sid] = refreshed["token"]
+                                self._queue_auth_cookie(self._center_refresh_cookie(refreshed["refresh_token"])["Set-Cookie"])
+                            except center_auth.CenterAuthUnavailable:
+                                raise
+                            except center_auth.CenterAuthError:
+                                access = None
+                    if access is not None and validated_token:
+                        with CENTER_SESSION_LOCK:
+                            cache_now = time.monotonic()
+                            for cache_sid, cached in list(CENTER_AUTH_CACHE.items()):
+                                if cached[0] <= cache_now:
+                                    CENTER_AUTH_CACHE.pop(cache_sid, None)
+                            CENTER_AUTH_CACHE[sid] = (
+                                cache_now + CENTER_AUTH_CACHE_SECONDS, validated_token, access)
+                    elif access is None:
+                        with CENTER_SESSION_LOCK:
+                            CENTER_AUTH_CACHE.pop(sid, None)
                 if access is None:
                     with CENTER_SESSION_LOCK:
                         CENTER_SESSION_TOKENS.pop(sid, None)
+                        CENTER_AUTH_CACHE.pop(sid, None)
                     c.execute("DELETE FROM auth_sessions WHERE token_hash=?", (token_hash,))
                     c.commit()
                     self._queue_auth_cookie(self._session_cookie("", expired=True)["Set-Cookie"])
                     self._queue_auth_cookie(self._center_refresh_cookie("", expired=True)["Set-Cookie"])
                     return None
+                center_role = center_navigator_role(access.get("access") or {})
+                if not center_role:
+                    with CENTER_SESSION_LOCK:
+                        CENTER_SESSION_TOKENS.pop(sid, None)
+                        CENTER_AUTH_CACHE.pop(sid, None)
+                    c.execute("DELETE FROM auth_sessions WHERE token_hash=?", (token_hash,))
+                    c.commit()
+                    self._queue_auth_cookie(self._session_cookie("", expired=True)["Set-Cookie"])
+                    self._queue_auth_cookie(self._center_refresh_cookie("", expired=True)["Set-Cookie"])
+                    return None
+                if row["role"] != center_role:
+                    c.execute("UPDATE operators SET role=? WHERE user_id=?", (center_role, row["user_id"]))
+                    row["role"] = center_role
+                    c.commit()
                 row["display_name"] = access["identity"].get("displayName") or row["display_name"] or row["name"]
             self._set_api_monitor_identity(row)
             return row
@@ -2360,7 +2518,7 @@ class Handler(BaseHTTPRequestHandler):
         return {"Set-Cookie": f"{CENTER_REFRESH_COOKIE}={refresh_token}; Path=/api; Max-Age={0 if expired else CENTER_REFRESH_TTL_SECONDS}; HttpOnly; SameSite=Strict{secure}"}
 
     def _image_allowed(self, name: str, session) -> bool:
-        if session["role"] == ROLE_ADMIN:
+        if session["role"] in ADMIN_ROLES:
             return True
         c = conn()
         try:
@@ -2445,23 +2603,32 @@ class Handler(BaseHTTPRequestHandler):
                 name = p.rsplit('/', 1)[1]
                 mime = 'image/svg+xml' if name.endswith('.svg') else 'text/javascript' if name.endswith('.js') else 'text/css'
                 return self._send(200, (HERE / 'web' / name).read_bytes(), mime + '; charset=utf-8')
+            if p.startswith('/assets/fonts/'):
+                name = p.removeprefix('/assets/fonts/')
+                if name not in FONT_ASSETS:
+                    return self._json(404, fail('font not found', 'not_found'))
+                return self._send_file(
+                    HERE / 'web' / 'fonts' / name,
+                    'font/woff2',
+                    {'Cache-Control': 'public, max-age=31536000, immutable'},
+                )
             if p.startswith('/assets/avatars/'):
                 from core.contracts import ACCOUNT_AVATAR_ALL_IDS
                 name = p.removeprefix('/assets/avatars/')
                 if name not in {avatar_id + '.png' for avatar_id in ACCOUNT_AVATAR_ALL_IDS}:
                     return self._json(404, fail('avatar not found', 'not_found'))
                 return self._send(200, (HERE / 'web' / 'avatars' / name).read_bytes(), 'image/png')
+            if p in (MESSAGE_BOARD_ROUTE, MESSAGE_BOARD_CREATE_ROUTE) and not CFG.get("dev_mode"):
+                return self._json(404, fail("not found", "not_found"))
             if p == "/api/local-token":
-                # Recovery credential is available only before the first administrator exists.
-                if self.client_address[0] in ("127.0.0.1", "::1") and not active_admin_exists():
-                    return self._json(200, {"ok": True, "token": CFG["token"]})
-                return self._json(403, fail("bootstrap credential unavailable", "forbidden"))
+                return self._json(403, fail("网页不提供初始化凭据；本机旧模式请使用 ops/bootstrap_admin.py", "cli_only"))
             if p == "/api/auth/status":
-                return self._json(200, auth_status(self._session()))
+                return self._json(200, auth_status(self._session(cache_auth=True)))
             if p == LIVENESS_ROUTE:
                 return self._json(200, ok({"status": "ok", "backend": CFG["backend"]}))
             if p.startswith("/api/") or p.startswith("/images/"):
-                session = self._bearer() if bearer_request else self._session()
+                session = self._bearer() if bearer_request else self._session(
+                    cache_auth=p in CENTER_AUTH_CACHED_READ_ROUTES)
                 q = {k: v for k, v in q.items() if not k.startswith('_')}
                 if bearer_request:
                     q['_client_app'] = 'prospector'
@@ -2483,7 +2650,7 @@ class Handler(BaseHTTPRequestHandler):
                     q['_actor_id'] = session['user_id']
                     q['_actor_display'] = session.get('display_name') or session['name']
                 q = scoped_sales_query(p, q, session)
-                if p == "/api/master" and q.get("full") == "1" and principal not in (ROLE_ADMIN, "agent"):
+                if p == "/api/master" and q.get("full") == "1" and principal not in (ROLE_SUPERADMIN, ROLE_ADMIN, "agent"):
                     return self._json(403, fail("admin role required", "forbidden"))
             if p == PROSPECTOR_ME:
                 return self._json(200, prospector_routes.me(session))
@@ -2502,7 +2669,10 @@ class Handler(BaseHTTPRequestHandler):
                 if CFG.get("center_auth_url"):
                     self._sync_growth_center(session)
                     shared = self._center_profile()
-                    return self._json(200, center_growth_payload(shared or {}, q))
+                    payload = center_growth_payload(shared or {}, q)
+                    if (payload.get("data") or {}).get("summary") is None:
+                        return self._json(200, account_growth.read(conn, session, {k: v for k, v in q.items() if not k.startswith('_')}))
+                    return self._json(200, payload)
                 return self._json(200, account_growth.read(conn, session, {k: v for k, v in q.items() if not k.startswith('_')}))
             if p.startswith("/images/"):
                 return self._send_image(p, session)
@@ -2513,6 +2683,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(404 if result.get("code") == "not_found" else 503, result)
                 return self._json(200, result)
             return self._json(404, {"ok": False, "error": "not found"})
+        except center_auth.CenterAuthUnavailable as e:
+            log("WARN", f"GET {p}: {e}")
+            return self._json(503, fail(str(e), "unavailable"))
         except Exception as e:  # noqa: BLE001 - 统一转结构化错误，别把线程搞崩
             if isinstance(e, prospector_auth.InvalidToken):
                 return self._json(401, fail(str(e), "unauthenticated"))
@@ -2535,13 +2708,15 @@ class Handler(BaseHTTPRequestHandler):
         self._pending_auth_headers = {}
         p = urlparse(self.path).path
         self._begin_api_monitor("POST", p)
+        if p in (MESSAGE_BOARD_ROUTE, MESSAGE_BOARD_CREATE_ROUTE) and not CFG.get("dev_mode"):
+            return self._json(404, fail("not found", "not_found"))
         authorization = self.headers.get("Authorization", "")
         agent_intake = p == AGENT_INTAKE_ROUTE
         if (authorization or p in PROSPECTOR_POST) and not self._prospector_transport_allowed():
             return self._json(403, fail("HTTPS required outside private LAN", "https_required"))
         if authorization and p != PROSPECTOR_LOGOUT and not agent_intake:
             return self._json(403, fail("read-only device authorization", "forbidden"))
-        auth_routes = {*PROSPECTOR_POST, "/api/auth/login", "/api/auth/logout", "/api/auth/setup", ACCOUNT_PROFILE_ROUTE, GROWTH_SEARCH_ROUTE, *ACCOUNT_POST}
+        auth_routes = {*PROSPECTOR_POST, "/api/auth/login", "/api/auth/logout", ACCOUNT_PROFILE_ROUTE, GROWTH_SEARCH_ROUTE, *ACCOUNT_POST}
         if not browser_write_allowed(self.headers.get("Origin"), self.headers.get("Sec-Fetch-Site"),
                                      self.headers.get("Host", ""), self._secure_transport()):
             return self._json(403, fail("request origin rejected", "origin_rejected"))
@@ -2587,7 +2762,7 @@ class Handler(BaseHTTPRequestHandler):
                 finally:
                     c.close()
             if p in (AUTH_REGISTER_ROUTE, AUTH_FORGOT_ROUTE):
-                if p == AUTH_REGISTER_ROUTE and not active_admin_exists():
+                if p == AUTH_REGISTER_ROUTE and not CFG.get("center_auth_url") and not active_admin_exists():
                     return self._json(403, fail("请先由管理员初始化系统", "setup_required"))
                 limiter = RECOVERY_LIMITER if p == AUTH_FORGOT_ROUTE else LOGIN_LIMITER
                 with limiter.admit(str(payload.get("name") or "").strip(), self.client_address[0]):
@@ -2613,6 +2788,14 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(401, fail("请先登录后修改密码", "unauthenticated"))
                 with LOGIN_LIMITER.admit(session["name"], self.client_address[0]):
                     if CFG.get("center_auth_url"):
+                        if session.get("must_change_password") and self._cookie_value(CENTER_REFRESH_COOKIE):
+                            with CENTER_REFRESH_LOCK:
+                                refreshed = center_auth.refresh(
+                                    CFG["center_auth_url"], self._cookie_value(CENTER_REFRESH_COOKIE))
+                                with CENTER_SESSION_LOCK:
+                                    CENTER_SESSION_TOKENS[self._session_id()] = refreshed["token"]
+                                self._queue_auth_cookie(
+                                    self._center_refresh_cookie(refreshed["refresh_token"])["Set-Cookie"])
                         token = self._center_token()
                         result = account_selfservice.change_center_password(
                             conn,
@@ -2622,6 +2805,7 @@ class Handler(BaseHTTPRequestHandler):
                         sid = self._session_id()
                         with CENTER_SESSION_LOCK:
                             CENTER_SESSION_TOKENS.pop(sid, None)
+                            CENTER_AUTH_CACHE.pop(sid, None)
                     else:
                         result = ACCOUNT_POST[p](payload, session)
                 return self._json(200, result, {"Set-Cookie": [
@@ -2643,6 +2827,7 @@ class Handler(BaseHTTPRequestHandler):
                     if CFG.get("center_auth_url"):
                         with CENTER_SESSION_LOCK:
                             center_token = CENTER_SESSION_TOKENS.pop(sid, "")
+                            CENTER_AUTH_CACHE.pop(sid, None)
                         if refresh_token:
                             center_auth.logout_refresh(CFG["center_auth_url"], refresh_token)
                         elif center_token:
@@ -2657,10 +2842,6 @@ class Handler(BaseHTTPRequestHandler):
                     self._session_cookie("", expired=True)["Set-Cookie"],
                     self._center_refresh_cookie("", expired=True)["Set-Cookie"],
                 ]})
-            if p == "/api/auth/setup":
-                if self.headers.get("x-push-token") != CFG["token"]:
-                    return self._json(401, {"ok": False, "error": "bootstrap token required"})
-                return self._json(200, auth_setup(payload))
             sess = self._session()
             agent_token = self.headers.get("x-push-token", "")
             scheme, _, bearer_agent_token = authorization.partition(" ")
@@ -2676,7 +2857,7 @@ class Handler(BaseHTTPRequestHandler):
                 if agent_intake:
                     return self._json(401, contract_failure("unauthorized", "Agent API token 无效或未配置"))
                 return self._json(401 if permission["code"] == "unauthenticated" else 403, permission)
-            if p == "/api/pending/delete" and payload.get("force") and (not sess or sess["role"] != ROLE_ADMIN):
+            if p == "/api/pending/delete" and payload.get("force") and (not sess or sess["role"] not in ADMIN_ROLES):
                 return self._json(403, fail("admin role required for force deletion", "forbidden"))
             if agent_intake:
                 return self._json(200, POST_ROUTES[p](payload))
@@ -2703,7 +2884,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, account_growth.award_search(conn, sess, payload))
             if p in ('/api/pending/approve_all','/api/pending/sync') and payload.get('ownership','mine') not in ('mine','all'):
                 raise ValueError('ownership must be mine or all')
-            if (sess and sess['role'] == ROLE_OPERATOR
+            if (sess and sess['role'] in (ROLE_OPERATOR, ROLE_SUPERADMIN)
                     and p in ('/api/pending/approve_all','/api/pending/sync')
                     and payload.get('ownership','mine') == 'mine'):
                 # Batch selection follows the chosen display scope, not a permission boundary.
@@ -2729,6 +2910,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, POST_ROUTES[p](payload))
         except LoginThrottled as error:
             return self._json(429, fail(str(error), error.code), {"Retry-After": str(error.retry_seconds)})
+        except center_auth.CenterAuthUnavailable as error:
+            log("WARN", f"POST {p}: {error}")
+            return self._json(503, fail(str(error), "unavailable"))
         except Exception as e:  # noqa: BLE001
             if p == AGENT_INTAKE_ROUTE:
                 code = 400 if isinstance(e, ValueError) else 500
@@ -2777,6 +2961,7 @@ def main() -> None:
     ap.add_argument("--backend", choices=("sqlite", "postgres"), default="sqlite")
     ap.add_argument("--postgres-env-file", default=str(postgresdb.DEFAULT_ENV_FILE))
     ap.add_argument("--center-auth-url", default=os.environ.get("NAVIGATOR_CENTER_AUTH_URL", ""), help="中心身份 API 地址；启用后登录和每次会话校验均走中心")
+    ap.add_argument("--dev-mode", action="store_true", default=os.environ.get("NAVIGATOR_DEV_MODE", "") == "1", help="启用开发端专用功能，例如留言板")
     ap.add_argument("--tls-cert-file", default=os.environ.get("FREIGHT_TLS_CERT_FILE", ""), help="受信任的内网 HTTPS 证书文件")
     ap.add_argument("--tls-key-file", default=os.environ.get("FREIGHT_TLS_KEY_FILE", ""), help="仅服务账号可读的证书私钥文件")
     ap.add_argument("--daemon", action="store_true", help="后台常驻（日志写 manual.log）")
@@ -2796,7 +2981,8 @@ def main() -> None:
     if agent_api_token and len(agent_api_token) < 32:
         ap.error("NAVIGATOR_AGENT_API_TOKEN 至少需要 32 个字符")
     CFG.update(db=args.db, backend=args.backend, postgres_env_file=args.postgres_env_file,
-               center_auth_url=args.center_auth_url.rstrip("/"), agent_api_token=agent_api_token)
+               center_auth_url=args.center_auth_url.rstrip("/"), agent_api_token=agent_api_token,
+               dev_mode=bool(args.dev_mode))
 
     if args.import_file:
         snap = json.loads(Path(args.import_file).read_text(encoding="utf-8"))

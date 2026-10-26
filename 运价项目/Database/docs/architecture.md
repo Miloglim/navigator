@@ -58,7 +58,7 @@
 ## 部署 / 运维
 
 - 起台账：`Database/start-manual.bat`（默认 `127.0.0.1:8795`，本机回环免口令、局域网设备只读、写令牌 `token_manual.txt`）。改 `manual_server.py` 后要重启服务。
-- 心跳：两个定时任务——低频 `0 9-13 * * *`（每小时）+ 高频 `*/10 14-18 * * *`（每 10 分钟），Asia/Shanghai；建议再经许可建"数据审查 agent"那条。
+- 心跳：由采集编排器内部调度，周一至周五 `09:00–13:59` 每小时、`14:00–18:59` 每 30 分钟运行，B 分片相对 A 延后 5 分钟，周末不拉取；不依赖 Windows 计划任务。
 - 换环境：改 `scripts/config/chat_sources.json` 的群 cid、`scripts/config/ledger_contract.json` 的台账连接 / 图目录 / 运行态目录；首轮用空 `watermark.json`；`python scripts/ledger_client.py` 冒烟连通。
 
 ## 关键接口一览

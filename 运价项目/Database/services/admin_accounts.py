@@ -5,7 +5,7 @@ import re
 from datetime import date
 from core.admin_contracts import (PROFILE_FIELDS, EXPERIENCE_FIELDS, ADMIN_TEXT_LIMIT,
     ADMIN_NOTE_LIMIT, MIN_CAREER_YEAR, SECURITY_ACTIONS, ADMIN_SERVER_FIELDS)
-from core.contracts import ACCOUNT_NAME_MAX_LENGTH
+from core.contracts import ACCOUNT_NAME_MAX_LENGTH, ACCOUNT_ROLES, ROLE_SUPERADMIN
 from services.account_forms import new_password
 
 
@@ -55,8 +55,10 @@ def security_request(body):
         raise ValueError('不支持的账号安全操作')
     if action in ('activate','reset_password'):
         new_password(body.get('new_password'),body.get('confirm_password'))
-    if action == 'role' and body.get('role') not in ('admin','operator','sales'):
-        raise ValueError('角色无效')
+    if action == 'role':
+        allowed_roles = ACCOUNT_ROLES if body.get('_role') == ROLE_SUPERADMIN else ACCOUNT_ROLES - {ROLE_SUPERADMIN}
+        if body.get('role') not in allowed_roles:
+            raise ValueError('角色无效')
     if action == 'rename_login':
         from services.account_forms import account_name
         account_name(body.get('new_name'))

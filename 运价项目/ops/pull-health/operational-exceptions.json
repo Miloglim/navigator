@@ -1,0 +1,14 @@
+{
+  "msgogugLVTuzFTBFrmAA19ikA==": {
+    "reason": "提箱进度通知；附件是刷箱/提箱表，没有对外报价",
+    "fingerprint": "d9c65a290a5f63170568f0c927a3d70f7a4f74bd5ce89662ce5287c846e861d9"
+  },
+  "msgPLfz54/hw0C8mg7b2B39nA==": {
+    "reason": "刷箱时间及订舱清单截图；个人订单价格不是公开群报价",
+    "fingerprint": "4dbc1b3ed99a14f7f3bf6b835c6a8baaac60e278f29b3687e2097989e7c7b31f"
+  },
+  "msgi8jUUaSrH5y4RX8jSgu2rQ==": {
+    "reason": "CMA 免费滞箱期通知；两份媒体下载 SHA256 相同，图中没有运价或舱位",
+    "fingerprint": "963c8a3341421091a7f26e1760bfdeea354e71b28d946cd51286592d1154ec27"
+  }
+}

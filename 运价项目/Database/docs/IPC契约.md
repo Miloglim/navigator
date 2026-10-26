@@ -1,5 +1,19 @@
 # HTTP 契约
 
+## 2026-10-23 运价币种字段
+
+- 运价 records 新增可选 `币种`，支持三位英文代码并归一常见写法（美元/美金→USD、人民币/RMB→CNY、欧元→EUR）；缺省为 `USD`。
+- `海运费USD` 继续作为兼容金额字段名保存非负整数裸价，实际币种以 `币种` 为准。非 USD 金额直接保存原数字和币种，不做汇率换算，也不再用“见原图”替代金额。
+- SQLite/PostgreSQL 的 `freight_items.currency` 默认 `USD`；旧记录启动迁移回填。平铺查询返回 `currency`，折叠查询在 `current.currency` 返回同一值。
+
+## 2026-10-22 用户留言板（开发端专属）
+
+- 默认关闭，正式端两个留言板路由均返回404且页签隐藏。只有显式设置`NAVIGATOR_DEV_MODE=1`或`--dev-mode`时开放；`auth/status.features.message_board`是前端唯一显示依据。
+- `GET /api/message-board?limit=30&offset=0`：开发模式下所有已登录superadmin/admin/operator/sales可读，返回`{ok:true,data:{rows,total,limit,offset}}`；按created_at/id倒序，limit上限100。行字段为id、user_id、author_name、content、created_at。
+- `POST /api/message-board/create`：接收`{content}`，正文去除首尾空白后1至1000字。作者ID和显示名只取当前服务端会话，客户端字段无效。返回`{ok:true,data:{post}}`。
+- 留言按纯文本保存并在前端转义，不接收HTML、图片或附件。Agent令牌不能读写留言板；接口异常沿用统一`{ok:false,error,code?}`返回。
+- 网页登录不再暴露初始化管理员或bootstrap token。`/api/auth/setup`不是注册路由；旧本地模式只能在服务器控制台运行`ops/bootstrap_admin.py`。
+
 ## 2026-10-21 Prospector 客户端下载
 
 新增公开只读下载入口：`GET /download`、`GET /api/downloads/prospector/latest`、`GET /downloads/prospector/<fileName>`。清单使用统一 `{ok,data|error}`，包含版本、文件名、大小、SHA256、发布时间、系统要求、签名状态和更新说明；公开页面当前只显示版本与安装信息，不显示签名标签。文件接口只发送清单当前登记的唯一安装包，并设置附件下载与长期缓存头。下载能力不读取运价业务库、不要求 Navigator 产品权限，也不改变 Prospector OAuth 查价、自动更新中心或采集写入口。运行目录由 `NAVIGATOR_DOWNLOADS_DIR` 配置，默认 `Database/.runtime/downloads/prospector`。
@@ -82,7 +96,7 @@
 
 6.33.2：无日期筛选的公司列表按 `schedule_list.product_id` 核对产品覆盖，并用响应 `comments_list.validFrom` 向同一列表接口补查各产品自己的价格和有效期。显式日期筛选不扩大范围。单组合最多20个补查日期，每次最多20页。若补查只返回关联这些编号的其他有价记录，而没有对应编号自身的价格记录，编号保存在 `_company_associated_unpriced_products`；若连关联有价记录也未找到，则保存在 `_company_missing_products`。两种情况均使任务为 `partial`，前者不在销售结果页另行显示编号提示，但不得把关联记录的价格复制或归属给班期编号；后者仍显示缺价提示。以上内部字段不作业务价格。结果及来源开关仅在销售运价页显示，其他页及切页后收到的响应保持隐藏。
 
-- `POST /api/company-rates/query`：登录的管理员、航管或销售创建公司运价异步任务。请求为 `{pol:[string],pod:[string],carriers:[string],valid_from?,valid_to?}`；起运港和目的港必填，港口组合最多 20 个。立即返回 `{ok:true,data:{task_id,cached}}`，其中 `cached` 为同账号、同类型、同查询签名且仍有效的最近任务，可能为空。
+- `POST /api/company-rates/query`：登录的管理员、航管或销售创建公司运价异步任务。请求为 `{pol:[string],pod:[string],carriers:[string],valid_from?,valid_to?}`；起运港和目的港必填且各自去重后最多 3 个，港口组合仍最多 20 个。立即返回 `{ok:true,data:{task_id,cached}}`，其中 `cached` 为同账号、同类型、同查询签名且仍有效的最近任务，可能为空。
 - `POST /api/company-rates/realtime`：同一权限创建船司实时价任务。除上述字段外须按6.37.0契约提交一个 `container_id` 和正数 `weight`，且至少一个船司。实时价只在用户显式点击后调用。
 - `GET /api/company-rates/tasks?id={task_id}`：只允许任务所属账号读取，返回状态 `queued|running|complete|partial|failed`、各港口组合结果、单组合错误和每组结果的 `fresh` 标记。读取不触发外部请求。
 - 三个接口均使用统一 `{ok,data?,error?}` 信封。请求错误返回 400，匿名返回 401，无权限或读取他人任务返回 403/404。外部任务失败只改变该任务状态，不改变 `/api/rates`、`/api/space` 的响应和时序。
@@ -111,6 +125,8 @@
 
 新提交报价识别NEB、NE ports、北巴后归一为Brazil North Ports；旧报价原值保留。销售pol/pod过滤兼容港群别名，nogroup=1仍匹配该港群的所有登记别名，但不展开成员。维护同方向重复港群识别名返回错误，不能按先后顺序覆盖。
 
+销售 `pol/pod` 参数默认只执行结构化港口匹配与默认港群展开。传 `global_query=1` 时，港口词才额外 OR 匹配 `message_text/remark`，用于“附带消息原文查询”。独立 `q` 仍可用于原文关键词搜索，并与 `pol/pod` 按 AND 组合。
+
 ## 名称识别（6.21.0，shadow阶段）
 
 `POST /api/master/resolve`输入`{source_group?:string,items:[{type:"pol"|"pod"|"carrier"|"route",value:string}]}`。单次1至200项，每个名称及来源群最多256字符。返回`{ok:true,data:[{input,entity,canonical,status,candidates?}]}`，顺序数量与输入一致。entity为port/port_group/carrier/route；status为resolved/unknown/ambiguous/invalid_target；仅resolved提供规范名，其他状态canonical/entity为null，歧义可列候选。顶层ok表示请求有效，不代表全部名称成功。格式错误沿用HTTP400结构化错误。
@@ -126,6 +142,9 @@
 ## 采集待核问题（2026-10-08）
 
 - `POST /api/review-issues`：仅采集令牌可写，正文 `{issues:[{source_group,message_id,message_text,media_ids,reasons}]}`，每批 1–200 条；返回 `{ok:true,data:{count}}`。按来源群与消息 ID 幂等更新未处理问题，不重新打开已处理问题。不写 `pending_records`，不推进水位。
+- 部分解析交付仍以 `/api/pending` 为产品写入口。记录可携带 `{partial_review:true, partial_stage, partial_reasons, partial_completed_stages, partial_products_identified, partial_candidates_excluded}` 作为待审元数据；coverage 原因、阶段和稳定 `_source_row` 只作内部完整性身份，不拼进业务 `备注`。这些键不参与业务产品指纹。校验通过不代表完整解析，整组自动放行接口必须跳过该来源，人工可逐条处理。partial 来源同时由 `/api/review-issues` 记录原文、图片、失败阶段和排除依据；只有产品逐条读回且待核回执确认后，编排器才形成可对账的部分终态并推进水位。
+- 编排器 `POST /api/runtime/trigger` 仍接受 `{group_slug}`；维护 canary 可附加 `message_id`。该 ID 必须是该群当前最旧未登记消息，已登记的水位边界消息自动跳过，否则拒绝创建轮次。手动触发优先复用同群未开始的自动轮次并将其置顶；没有可复用轮次时才创建新父轮次。
+- `message_partial_review` 与 `partial_review` 只作解析完整性观测元数据，不参与放行判定。`/api/pending/approve_all` 以每行 `check_status` 和同源组是否仍有 failed 为准：整组全 passed 才放行，任一 failed 继续整组连坐。来源卡片批量接口同样只提交当前 passed ID。
 - `GET /api/review-issues?status=open&limit=500`：仅管理员、航管可读，返回 `{ok:true,data:{total,rows}}`；每行保留原文、原图引用、阻塞原因和状态。销售不可见，最多返回 500 条。
 - `POST /api/review-issues/resolve`：仅管理员、航管可写，正文 `{source_group,message_id}`；返回 `{ok:true,data:{resolved:boolean}}`。只记录“已处理”，不生成报价、不放行、不删除原始证据。
 - 采集在 BUILD 阶段先持久化本轮解析阻塞，再推进到预检/提交；接口失败时停在原阶段，水位不动。旧版服务不支持此接口时必须升级服务，不能把本地报告冒充前端可见。
@@ -226,6 +245,8 @@
 
 登录会话以 `freight_session` 的高熵 Cookie 为唯一身份凭据，数据库只保存其 SHA-256 摘要。`client_ip` 保留为登录时的审计字段，不参与后续身份校验：DHCP、VPN、公司反向代理和网络切换不应造成用户无故退出。账号停用、角色或密码变更、显式退出、快照导入和到期仍会删除或拒绝会话。
 
+中心模式下，中心明确拒绝中心会话或 Navigator 准入时，Navigator 删除本地会话并要求重新登录。中心网络故障、续期限流或 5xx 返回 HTTP 503 `{ok:false,code:"unavailable"}`，保留本地会话和刷新 Cookie，后续请求继续尝试续期。同一本地会话的并发续期必须串行化；中心刷新令牌只允许成功轮换一次，其他并发请求复用新访问令牌，不能用旧刷新令牌清掉会话。
+
 `GET /api/pending` 返回独立待审条目。`check=passed` 与 `check=failed` 只按该条目的机械校验结果筛选；前端可按消息 ID 做视觉归组，但组内条目不共享字段或审核动作。
 
 ## 已放行记录重分类
@@ -261,6 +282,12 @@
 既有四个销售读取接口支持 `ctype=20GP,40HQ/HC,40NOR,45HQ/HC`（四档任意多选，内部 OR，兼容45HQ/45HC），`route` 与 `group` 为规范名精确匹配。
 新增 `valid_since=YYYY-MM-DD`：保留有效期与所选日期及之后相交的记录，即 `valid_to >= 所选日期`；无结束边界视为不设限。旧 `valid` 仍为有效期覆盖单日，保持调用兼容。销售查询与导出使用相同筛选参数。
 
+可选 `q=<关键词>` 默认匹配起运港、目的港、船司、航线、航线服务、船名航次、有效期原文、消息原文和备注，不再使用 `search_original` 参数。匹配大小写不敏感并折叠拉丁重音，例如 `Asuncion` 与 `Asunción` 等价。
+
+`pol` / `pod` 保留原有主数据、别名与港群筛选，并默认同时用 `message_text` / `remark` 做包含匹配，覆盖只写在消息正文里的细碎港口。全文命中不改变产品结构，备注中的附加港不会被自动转换为直接目的港记录。
+
+`pol` / `pod` 各自先去重，再限制最多 3 个；超过时返回 400 和“起运港/目的港最多选择 3 个”。销售页一次输入或粘贴多个港口时只落前 3 个并提示，查询参数和公司运价任务同样按该上限发送。
+
 
 ## 航管 ID 精确查询
 
@@ -287,6 +314,8 @@
 `POST /api/pending/approve_all` 只放行整组通过的运价/舱位来源消息。按归一化消息ID归组（去掉msg//前缀和末尾=）；缺少消息ID的旧条目各自成组。同源 awaiting 的 rates/space 条目共同检查，任何一条未过或不属于当前ownership范围则整组保留待审，approved/rejected 历史条目不阻挡；港群候选不在范围。每组在一个事务中逐条重新校验，任一条失败则整组业务写入回滚，仅真正失败条目更新校验错误；其他通过结论不改写。单条和卡片人工放行行为不变。
 
 `GET /api/pending?status=awaiting&check=passed&whole_passed=1` 在默认条目列表中复用一键放行的整组条件，按钮数量为可放行条目数，不是组数；普通列表不带此参数，仍显示真实逐条结论。`remaining_passed` 为整组满足条件且仍待审的条目数；`held_by_group` 为当前范围内已通过、但因同组未过或范围外成员暂缓的条目数。两字段与实际执行共用筛选口径。
+
+来源消息列表默认把含 failed 的组排在前面；同状态内再按最新记录倒序。`POST /api/pending/approve_all` 返回 `approved`（放行条目数）、`approved_groups`（实际放行组数）、`elapsed_seconds`（本次请求耗时）；前端成功提示只显示“已放行 N 组”。混合组不进入按钮计数，也不在执行后显示为待放行数量。
 
 - `POST /api/pending/reject_group` 新版传 `ids: number[]`、`kind`、`note`；旧 `group_key` 调用保持兼容。编号必须是正整数，空数组不处理任何记录。
 - `POST /api/pending/reject` 与 `/api/pending/reject_group` 的 `note` 可为空：空值记录为 `reject_noise`，形成 `pending_rejection:noise` 学习信号，后续不进入回炉；非空值记录为 `reject_rework`，保留原因供 Agent 按指定问题修订后重新递回人工队列。
@@ -416,7 +445,7 @@ POST拒绝跨站控制，报告不接收原始正文、完整命令或工具输�
 
 
 ## 管理员终端 HTTP（6.2.0）
-全部接口仅admin，统一`{ok,data?,error?}`；无权限403。GET `/api/admin/accounts`支持q/role/status/offset/limit；GET `/api/admin/account?user_id=...`返回公开档案、归属统计、安全状态和签名；GET `/api/admin/account/events`支持user_id及分页；GET `/api/admin/account/records`按user_id、source(published/awaiting/rejected)分页。
+全部接口仅superadmin/admin，统一`{ok,data?,error?}`；无权限403。GET `/api/admin/accounts`支持q/role/status/offset/limit；GET `/api/admin/account?user_id=...`返回公开档案、归属统计、安全状态和签名；GET `/api/admin/account/events`支持user_id及分页；GET `/api/admin/account/records`按user_id、source(published/awaiting/rejected)分页。普通管理员不能授予或维护`superadmin`。
 POST `/api/admin/accounts`仅接收name/display_name/role，建未开通账号；POST `/api/admin/account/profile`接收user_id、section(profile/experience)、fields、expected_signature，白名单分区修改；POST `/api/admin/account/security`接收user_id、action、expected_signature，角色操作带role，开通/重置带new_password/confirm_password。服务端身份字段由认证层覆盖，不信任客户端身份。
 安全action为activate/disable/enable/role/rename_login/reset_password/require_password_change/revoke_sessions；`rename_login` 额外接收 `new_name`。登录账号真正变化后撤销该账号旧会话、删除旧/新登录名下的待处理重置申请并要求用新账号重新登录；稳定 `user_id` 与 `publisher_id` 不变。公告归属按 `user_id`，运价/舱位/待审记录按 `publisher_id`，因此改登录账号不改历史归属。其他成功安全操作沿用各自动作的会话规则，不删除钉钉消息、历史报价或采集记录。role的新值与当前角色相同时、rename_login的新值与当前账号相同时均返回400，不更新安全修订、不写审计事件、不撤销会话。开通/重置要求本人改密，登录返回must_change_password；未改密时业务API返回403与code=password_change_required，只允许认证状态、改密、退出等必要入口。密码和令牌不出现在管理员查询或审计中。
 
@@ -452,6 +481,42 @@ POST `/api/admin/accounts`仅接收name/display_name/role，建未开通账号�
 - `POST /api/item-feedback/dismiss` 接收 `{submission_id,action:"withdraw"|"reject"}`。提交人可撤下自己提交的反馈；航管及管理员可撤下或驳回。记录只改状态，保留作者、时间及原建议；未经登录、采集令牌单独调用均无权使用。
 - 销售扁平查询的每行附 `feedback:[]`，运价折叠查询的每版报价附 `feedback_by_entry:{entry_id:[...]}`，两接口都返回 `feedback_supported:true` 供旧进程兼容门禁。`old_value` 与当前正式字段不符时反馈带 `stale:true`，主行不覆盖新正式值；新建议提交时旧反馈转为 `stale`。这些显示字段不改变查询、排序、审核结论或正式价格。
 
+
+## 2026-10-21 运价提取运行控制 HTTP（0.7.0，127.0.0.1:8797）
+
+- `GET /api/runtime` 返回 `{ok:true,data:{generated_at,service,scheduler,triggers,workers,dws}}`。`scheduler` 包含时区、启停、Tick、工作日、时间窗、A/B 偏移、最近调度时间与下一槽位；`triggers` 为最近 12 条持久触发摘要；`workers` 包含模型、并发容量、Agent 执行体、稳定 Worker 名称、存活/忙碌状态、当前任务和队列计数；`workers.queue` 默认只统计实时生产轮次及其消息子轮次，`scope=live`，已取消的历史回填单独放在 `historical_by_status`，不混入部分待核、排队和失败数；`dws` 仅包含固定登录状态、安全原因和检查时间。
+- `POST /api/dws/login` 接收空 JSON `{}`，返回 `{ok:true,data:{started,state,reason,...}}`。服务只启动既有 `dws auth login --recommend --format json` 浏览器授权并由后台读取登录态；不接收 Token、账号、密码，不返回 CLI 原始诊断。DWS 已登录或授权进行中时幂等返回，不重复启动。
+- 两个路由继续只绑定回环地址并校验 Host。`serve` 模式可以查看运行事实和发起 DWS 授权，但服务状态保持未启动，调度器与 Worker 不会执行；只有 `service` 模式会产生真实触发和任务。
+
+### 2026-10-22 前端可编辑配置（0.8.0）
+
+- `POST /api/runtime/schedule` 接收 `{enabled,tick_seconds,weekdays,shard_offsets_seconds,windows}`；窗口字段为 `{start,end,interval_seconds}`。服务端严格校验字段、布尔值、数值范围、工作日和开始/结束顺序，原子写入 `config/schedule.json` 后返回完整运行快照。运行中的 service 下个 tick 使用新配置。
+- `POST /api/runtime/worker` 接收 `{enabled,model,concurrency,codex_exe,dws_exe}`，并发限制 1–8；`enabled` 控制 Worker 是否领取新任务，保存后立即切换运行中 service 的领取闸门，模型和并发在服务重启后应用。CLI 路径只作为本机参数保存和执行，不通过 shell 拼接。
+- `/api/runtime` 增加 `settings.worker`、`settings.effective`、`pipeline[15]` 和 `workers.control_enabled`。只读 `serve` 保存的是下次 service 启动配置；显式展示“计划预览”，不能被理解为真实下一触发。
+- `POST /api/runtime/trigger` 接收 `{group_slug}`，只允许已登记群；Worker 暂停时返回 400。成功返回 `{group,trigger_key,run_ids}`，将所选群轮次置顶持久队列，不改变自动调度开关；同群保序、依赖、待审边界和并发上限仍生效。
+
+### 2026-10-22 Agent 配置故障诊断（0.9.3）
+
+- `/api/runtime` 的 `agent.state` 在模型不受当前网关支持时返回 `blocked`，固定原因包含“当前模型不可用”；Worker 领取闸门同时关闭，恢复需先选择可用模型并重新启用 Worker。
+- Agent 失败阶段产物目录新增 `failure.json`：`{stage,model,exit_code,output_created,prompt_chars,image_count,diagnostic}`。`diagnostic` 只用于本机运维审查，敏感认证行已脱敏，不作为业务接口返回正文。
+
+### 2026-10-22 业务待核状态（0.9.5）
+
+- 业务阶段自动重读后仍失败时，任务状态为 `NEEDS_REVIEW` 而不是 `FAILED`；批次 `needs_review` 计数同时包含父级 `HELD` 和子级 `NEEDS_REVIEW`。
+- `NEEDS_REVIEW` 保留原文、原图、自动修复记录和待核问题回执，停止该消息后续写审和水位，但不占 Worker；同群后续消息仍可领取。
+- `resume`、`recheck_inventory`、`recheck_source` 接受 `FAILED` 或 `NEEDS_REVIEW` 的轮次。模型认证和模型配置错误仍作为独立熔断原因，不混入业务待核。
+
+### 2026-10-22 编排器来源分区（0.9.6）
+
+- Agent 中间契约的抽取记录和盘点格新增 `section_role`：`product/reference/local_charge/inquiry`，历史空值按 `product` 兼容。
+- 机械覆盖只比较 `product`，非正式分区返回 `ignored_inventory_cells` 与 `ignored_candidate_records`；归一和送审只接收正式产品。无 product 的消息进入 `NEEDS_REVIEW`，不能以空报价完成。
+
+### 2026-10-22 Trace 阻塞处置动作（0.9.7）
+
+- `POST /api/trace/action` 新增 `{action:"recheck_source",run_id,instruction?}`：指令最长2000字，写入 `run_guidance` 并随下个 Agent 阶段只读传入。
+- 新增 `{action:"amend_result",run_id,stage,result,instruction?}`：阶段仅限 `classify/extract/inventory`，`result` 必须通过对应阶段 Schema 后覆盖，只重开该阶段下游。
+- 新增 `{action:"mark_noise",run_id,reason}`：先关闭台账 open review issue，再把该消息剩余未完成阶段软标记为 `SKIPPED`；原因进入事件，原文和原图保留。
+- 批次 `HELD` 父级在来源恢复后重新开放；具体业务事实仍由操作者填写，接口不自动猜价或放行。
 
 ## 2026-10-10 编排器只读HTTP契约（127.0.0.1:8797）
 

@@ -1,10 +1,11 @@
 """Pure account capabilities. Database state and HTTP details are supplied by callers."""
 import ipaddress
 
-from core.contracts import (ROLE_ADMIN, ROLE_OPERATOR, ROLE_SALES, SALES_SCOPED_GET,
+from core.contracts import (ROLE_SUPERADMIN, ROLE_ADMIN, ROLE_OPERATOR, ROLE_SALES, SALES_SCOPED_GET,
     OPS_OWNERSHIP_GET, OWNERSHIP_QUERY_PARAM, OWNERSHIP_MINE, OWNERSHIP_ALL)
 
 ROLE_VIEWS = {
+    ROLE_SUPERADMIN: ("sales", "ops", "config", "account", "monitor"),
     ROLE_ADMIN: ("sales", "ops", "config", "account", "monitor"),
     ROLE_OPERATOR: ("sales", "ops", "account"),
     ROLE_SALES: ("sales", "account"),
@@ -27,7 +28,7 @@ def scoped_sales_query(path, query, session):
     choice = query.get(OWNERSHIP_QUERY_PARAM, default)
     if choice not in (OWNERSHIP_MINE, OWNERSHIP_ALL):
         raise ValueError('ownership must be mine or all')
-    if session and session['role'] == ROLE_OPERATOR and choice == OWNERSHIP_MINE:
+    if session and session['role'] in (ROLE_OPERATOR, ROLE_SUPERADMIN) and choice == OWNERSHIP_MINE:
         result['viewer'] = session['name']
     return result
 

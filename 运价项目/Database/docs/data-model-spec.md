@@ -1,5 +1,13 @@
 # 数据模型定稿（data-model-spec）
 
+## 运价币种（2026-10-23）
+
+`freight_items.currency` 保存运价金额的三位 ISO 风格币种代码，默认和存量兼容值为 `USD`。历史 `海运费USD` / `price_usd` 字段名继续保留以兼容接口与旧数据，但金额币种以 `currency` 为准，不再从字段名推定美元。EUR/CNY 等非 USD 记录保存原金额，不做换汇；`海运费USD` 在契约中作为兼容金额键使用。待审核 payload 同步使用 `币种`，SQLite/PostgreSQL 启动迁移为旧记录回填 USD。
+
+## 用户留言板（6.51.2，开发端专属）
+
+`message_board_posts`独立保存开发端用户留言：`id`为文本主键，`user_id`和`author_name`来自发布时会话快照，`content`为最多1000字纯文本，`created_at`为北京时间字符串。`created_at`及`user_id`建索引，按时间倒序分页。正式端默认关闭接口和页签；开发端需显式开启。留言不属于运价、舱位、公告、通知或主数据。
+
 > 适用：`运价项目/Database`（台账）+ `Skill/freight-rate-heartbeat`（采集）。
 > 定稿时间：2026-09-12，依据：本轮逐条确认 + 2850 条群聊语料取证。
 > 这份文档只回答一件事：**一个名字从群里到看板上，每一层是什么、谁负责、在哪张表。**
